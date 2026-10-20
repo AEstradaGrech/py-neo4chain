@@ -3,6 +3,7 @@ from loguru import logger
 from deepagents import create_deep_agent
 from langchain.agents import create_agent
 router = APIRouter(prefix="/tests")
+import os
 
 @router.get("/check") 
 async def check()-> str:

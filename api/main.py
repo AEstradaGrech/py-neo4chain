@@ -1,9 +1,12 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
-
 from api.routes.devtests_api import router as dev_router 
+from api.routes.tavily_api import router as tavily_router 
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -20,3 +23,4 @@ app.add_middleware(
 )
 
 app.include_router(dev_router)
+app.include_router(tavily_router)
