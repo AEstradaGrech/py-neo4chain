@@ -1,0 +1,6 @@
+fastapi[standard]
+dotenv
+loguru
+
+deepagents
+langchain-ollama
