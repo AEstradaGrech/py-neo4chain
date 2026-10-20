@@ -74,3 +74,8 @@ class TavilyAgentRequest(BaseModel):
     model: Optional[str]=Field(description="Optional OLLAMA model to use with the agent. Default to app.default_llm_model", default=None)
     search_config:Optional[TavilySearchConfig]= Field(description="Tavily API params for the search endpoint", default=None)
     extract_config:Optional[TavilyExtractConfig]= Field(description="Tavily API params for the extract endpoint", default=None)
+
+class Neo4jSchema(BaseModel):
+    nodes:dict[str, str] = Field(description="KVP >> NAME : {METADATA}")
+    relationships:dict[str,str] = Field(description="Node relationships")
+    graph_relation:List[str] = Field(description="Current Node to Node relationships")
