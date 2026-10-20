@@ -1,7 +1,7 @@
 
 from pydantic import BaseModel, Field
 from datetime import date
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 
 class TavilySearchConfig(BaseModel):
@@ -60,8 +60,17 @@ class TavilySearchConfig(BaseModel):
         description="Whether to include search usage information"
     )
 
+class TavilyExtractConfig(BaseModel):
+    """Tavily extract parameters"""
+    urls: List[str]=Field(description="List of urls to extract data from. Required")
+    extract_depth:str = Field(description="Depth of the extraction. 'basic' | 'advanced'", default="basic"),
+    include_images: bool = Field(
+        default=False,
+        description="Whether to include images in the extraction results"
+    )
 class TavilyAgentRequest(BaseModel):
     input: str = Field(description="User query")
     sysmsg: Optional[str] = Field(description="System message for the agent", default=None)
     model: Optional[str]=Field(description="Optional OLLAMA model to use with the agent. Default to app.default_llm_model", default=None)
     search_config:Optional[TavilySearchConfig]= Field(description="Tavily API params for the search endpoint", default=None)
+    extract_config:Optional[TavilyExtractConfig]= Field(description="Tavily API params for the extract endpoint", default=None)
