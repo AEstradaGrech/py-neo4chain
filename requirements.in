@@ -5,3 +5,5 @@ loguru
 deepagents
 langchain-ollama
 langchain-tavily
+
+pydantic
