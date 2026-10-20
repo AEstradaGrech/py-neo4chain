@@ -5,5 +5,6 @@ loguru
 deepagents
 langchain-ollama
 langchain-tavily
-
+langchain-neo4j
+neo4j
 pydantic
