@@ -21,7 +21,6 @@ class Neo4jService:
 
     def get_schema(self, db_name:str = None):
         graph = self.get_graph(db_name=db_name)
-        logger.warning(f"-- DB SCHEMA >>\n\n{graph.schema}")
         return graph.schema
     
     def get_graph(self, db_name:str = None) -> Neo4jGraph:
@@ -31,7 +30,6 @@ class Neo4jService:
             password=os.environ["NEO_PASS"],
             database=self._db_name if db_name is None else db_name
         )
-        logger.warning(f"-- graph for db: {self._db_name if db_name is None else db_name} --")
         graph.refresh_schema()
         return graph
 
@@ -67,6 +65,22 @@ class Neo4jService:
             password=os.environ["NEO_PASS"]
         )
 
+    def show_indexes(self, db_name:str = None):
+        graph = self.get_graph(db_name=db_name)
+        return graph.query("""SHOW VECTOR INDEXES""")
+
+    def neo4j_index_vector_search(graph: Neo4jGraph, index_name:str, question:str, top_k = 5):
+        vector_search_query = """
+            CALL db.index.vector.queryNodes($index_name, $top_k, $question_embedding) yield node, score
+            RETURN score, node.text AS text
+        """
+        question_embedding = ollama_embeddings.embed_query(question)
+        return graph.query(vector_search_query, 
+            params={
+            'question_embedding': question_embedding, 
+            'index_name':index_name, 
+            'top_k': top_k})
+    
     def split_text_file(self, path:str, chunk_size:int = 1000, overlap:int = 20):
         loader = TextLoader(f"{path}.txt",encoding='utf-8')
         documents = loader.load()
@@ -75,19 +89,15 @@ class Neo4jService:
     
     async def graph_qa_from_ollama(self, query:str, db_name:str = None) -> str:
         graph = self.get_graph()
-        
         llm = ollama()
         CYPHER_GENERATION_PROMPT = PromptTemplate(
             input_variables=["schema", "question"], 
             template=self.get_qa_cypher_generator_msg()
         )
-        cypher_msg = CYPHER_GENERATION_TEMPLATE.replace("{schema}", self.get_schema(db_name=db_name)).replace("{question}", query)
-        chain = GraphCypherQAChain.from_llm(graph=graph, llm=llm, cypher_prompt=cypher_msg, allow_dangerous_requests=True, verbose=True)
+        chain = GraphCypherQAChain.from_llm(graph=graph, llm=llm, cypher_prompt=CYPHER_GENERATION_PROMPT, allow_dangerous_requests=True, verbose=True)
         response = await chain.ainvoke({"query": query})
-        logger.warning(f"-- NEO4J CHAIN RESPONSE:\n\n {response}")
-        response["result"]
-
-
+        return response["result"]
+        
 
     def get_qa_cypher_generator_msg(self, expanded:bool = False) -> str:
         return CYPHER_GENERATION_TEMPLATE if expanded is False else EXPANDED_CYPHER_GENERATION_TEMPLATE

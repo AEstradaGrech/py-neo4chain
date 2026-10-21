@@ -12,10 +12,10 @@ from api.services.neo4j_service import Neo4jService
 
 router = APIRouter(prefix="/neo4j")
 
-@router.get("/schema-string")
-async def db_schema_string() -> str:
+@router.get("/show-indexes")
+async def show_db_indexes() -> List[str]:
     svc = Neo4jService()
-    return svc.get_schema()
+    return svc.show_indexes()
 
 @router.get("/schema")
 async def db_schema() -> Neo4jSchema:
@@ -25,18 +25,33 @@ async def db_schema() -> Neo4jSchema:
 @router.get("/check/seed-data")
 async def check() -> Any:
     svc = Neo4jService()
-    
-    schema = svc.get_schema()
-    logger.warning(f"-- SCHEMA -- \n\n{schema}")
+    logger.warning(f"-- SCHEMA -- \n\n{svc.get_schema()}")
     graph = svc.get_graph()
     query = """
-    MATCH (m:Movie)
-    RETURN count(m) as numberOfMovies
+MATCH (m:Movie)
+RETURN count(m) as numberOfMovies
     """
-    query_res =graph.query(query=query)
-
-    logger.warning(f"-- SIMPLE GRAPH QUERY --> {query_res}")
-    response = await svc.graph_qa_from_ollama(query="What was the cast of The Matrix?")
+    query_res =graph.query(query=query.strip())
+    logger.warning(f"-- SIMPLE GRAPH QUERY\n\nQuery: {query}\n\nResult: {query_res}")
+    query = """
+MATCH (actor:Person)-[:ACTED_IN]->(movie:Movie) 
+RETURN actor.name, movie.title LIMIT 10
+    """
+    query_res =graph.query(query=query.strip())
+    logger.warning(f"-- SIMPLE GRAPH QUERY\n\nQuery: {query}\n\nResult: {query_res}")
+    query = """
+MATCH (actor:Person)-[:ACTED_IN]->(movie:Movie) 
+RETURN actor.name, movie.title LIMIT 10
+        """
+    query_res =graph.query(query=query.strip())
+    logger.warning(f"-- SIMPLE GRAPH QUERY\n\nQuery: {query}\n\nResult: {query_res}")
+    query = """
+MATCH (actor:Person {name:"Kirsten Dunst"})-[:ACTED_IN]->(m)<-[:ACTED_IN]-(coactors) 
+RETURN actor.name, m.title, coactors.name
+    """
+    query_res =graph.query(query=query.strip())
+    logger.warning(f"-- SIMPLE GRAPH QUERY\n\nQuery: {query}\n\nResult: {query_res}")
+    response = await svc.graph_qa_from_ollama(query="What was the cast of Jumanji?")
     return response
 
 @router.post("/check/file/similarity-search")
