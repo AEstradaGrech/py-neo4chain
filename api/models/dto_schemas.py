@@ -86,3 +86,5 @@ class TextFileVectorSearch(BaseModel):
     query:str = Field(description="User input to search in the Vector store")
     chunk_size: Optional[int] = Field(description="Length of the file chunks", default=None)
     chunk_overlap: Optional[int] = Field(description="text overlap between chunks", default=None)
+    k:Optional[int] = Field(description="Number of K-neighbors to return for the given input", default=None),
+    min_score: Optional[float] = Field(description="Minimum score for a chunk to be included as a result", default=None)
