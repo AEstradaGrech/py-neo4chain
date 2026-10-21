@@ -38,7 +38,7 @@ class Neo4jService:
     def get_store_from_docs(self, docs:List[Document], hybrid:bool = False, embedder:OllamaEmbeddings = None) -> Neo4jVector:
         return Neo4jVector.from_documents(
             documents=docs,
-            embedding=embedder if embedder is None else ollama_embeddings(),
+            embedding=embedder if embedder is not None else ollama_embeddings(),
             search_type=SearchType.HYBRID if hybrid else SearchType.VECTOR,
             url=os.environ["NEO_URI"], 
             username=os.environ["NEO_USERNAME"], 
@@ -49,7 +49,7 @@ class Neo4jService:
         return Neo4jVector.from_existing_index(
             index_name=index_name,
             keyword_index_name=index_keyword,
-            embedding=embedder if embedder is None else ollama_embeddings(),
+            embedding=embedder if embedder is not None else ollama_embeddings(),
             search_type=SearchType.HYBRID if hybrid else SearchType.VECTOR,
             url=os.environ["NEO_URI"], 
             username=os.environ["NEO_USERNAME"], 
@@ -58,7 +58,7 @@ class Neo4jService:
 
     def get_store_from_graph(self, node_label:str, node_properties: List[str], hybrid:bool = False, embedder:OllamaEmbeddings = None) -> Neo4jVector:
         return Neo4jVector.from_existing_graph(
-            embedding=embedder if embedder is None else ollama_embeddings(),
+            embedding=embedder if embedder is not None else ollama_embeddings(),
             node_label=node_label,
             text_node_properties=node_properties,
             search_type=SearchType.HYBRID if hybrid else SearchType.VECTOR,

@@ -1,0 +1,69 @@
+# Usage:
+#   With test data (reloads ./data/neo4j.dump, overwriting the 'neo4j' db):
+#     docker compose down
+#     docker compose --profile seed up -d
+#   Empty db, from scratch (deletes the neo4j-data volume: all graph data AND users/passwords):
+#     docker compose down -v
+#     docker compose up -d
+#   Plain 'docker compose down' / 'up' keeps the data: only 'down -v' deletes the volume.
+#
+# Storage layout (shared by both services):
+#   neo4j-data   -> /data    Docker named volume holding the whole Neo4j store ('neo4j' db + 'system' db with users).
+#                            'neo4j-seed' writes it, 'neo4j' (the server) reads/writes it. The API never touches it:
+#                            it talks to the server over Bolt (port 7687).
+#                            Must NOT be a Windows bind mount: 'neo4j-admin database migrate' fails there
+#                            (truncate on transaction logs -> IOException) and I/O is much slower.
+#   ./data       -> /import  Bind mount (host folder shared live, not copied). Holds neo4j.dump for the seed
+#                            and is the server import dir (APOC / LOAD CSV files).
+#   ./neo4j-logs -> /logs    Bind mount so logs survive 'down -v' and stay on the host until deleted by hand.
+
+services:
+  # One-shot job, only runs with '--profile seed': loads the dump into the volume, migrates it to 'aligned'
+  # (the dump comes in the deprecated 'standard' format, which can't create vector indexes) and exits with code 0.
+  # Must run with the server stopped: 'load' can't replace a db that a running server has open.
+  neo4j-seed:
+    image: neo4j:2026.08.1
+    user: neo4j
+    container_name: lch-neo-seed
+    profiles: [seed]
+    # 'bash' instead of 'neo4j' as command: the image entrypoint just execs it (no server is started)
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        neo4j-admin database load neo4j --from-path=/import --overwrite-destination=true --verbose
+        neo4j-admin database migrate neo4j --to-format=aligned
+    volumes:
+      - neo4j-data:/data
+      - ./data:/import
+      - ./neo4j-logs:/logs
+
+  # The Neo4j server the API connects to (bolt://localhost:7687, browser UI on http://localhost:7474)
+  neo4j:
+    image: neo4j:2026.08.1
+    user: neo4j
+    container_name: lch-neo
+    depends_on:
+      # waits for the seed to finish when '--profile seed' is active; 'required: false' ignores it otherwise
+      neo4j-seed:
+        condition: service_completed_successfully
+        required: false
+    ports:
+      - 7474:7474
+      - 7687:7687
+    environment:
+      # initial password, only applied when the volume is new (after 'down -v')
+      - NEO4J_AUTH=neo4j/neo4jpassword
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_server_directories_import=/import
+      - NEO4J_PLUGINS=["apoc", "graph-data-science", "genai"]
+    volumes:
+      - neo4j-data:/data
+      - ./data:/import
+      - ./neo4j-logs:/logs
+
+volumes:
+  neo4j-data:

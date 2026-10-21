@@ -215,3 +215,5 @@ cython_debug/
 notes.md
 .claude
 pyapi-env
+data
+neo4j-logs

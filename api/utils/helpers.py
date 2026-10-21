@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from loguru import logger
 
-from api.utils.statics import default_llm_model, default_embedding_model, default_embedding_dimensions
+from api.utils.statics import default_llm_model, default_embedding_model, default_embedding_dimensions, default_embedding_numctx
 
 def ollama(model:str = None, temp:float = 0.7, max_tokens:int = 600, ctx_len:int = 4096, verbose:bool = False) -> ChatOllama:
     logger.warning(f"-- OLLAMA INSTANCE FOR: {default_llm_model if model is None else model}")

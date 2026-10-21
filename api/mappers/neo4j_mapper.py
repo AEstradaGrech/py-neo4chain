@@ -16,4 +16,4 @@ def schemaToDto(schema:str)-> Neo4jSchema:
     for rel in relationships:
         rel_split = rel.split("{")
         rels_dict[rel_split[0]] = "{"+f"{rel_split[1]}"
-    return Neo4jSchema(nodes=nodes_dict, relationships=rels_dict,graph_relation=graph)
+    return Neo4jSchema(nodes=nodes_dict, relationships=rels_dict,graph_relation=graph, summary=schema)

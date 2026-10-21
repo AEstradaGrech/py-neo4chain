@@ -78,4 +78,11 @@ class TavilyAgentRequest(BaseModel):
 class Neo4jSchema(BaseModel):
     nodes:dict[str, str] = Field(description="KVP >> NAME : {METADATA}")
     relationships:dict[str,str] = Field(description="Node relationships")
-    graph_relation:List[str] = Field(description="Current Node to Node relationships")
+    graph_relation:List[str] = Field(description="Current Node to Node relationships"),
+    summary:str = Field(description="Full text with the schema data")
+
+class TextFileVectorSearch(BaseModel):
+    textfile_path:str = Field(description="Path to the text file to load and embed, without file extension")
+    query:str = Field(description="User input to search in the Vector store")
+    chunk_size: Optional[int] = Field(description="Length of the file chunks", default=None)
+    chunk_overlap: Optional[int] = Field(description="text overlap between chunks", default=None)
