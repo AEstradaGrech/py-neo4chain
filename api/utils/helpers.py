@@ -1,5 +1,8 @@
+import os
+from typing import Any, Dict, List
 from fastapi import HTTPException
 from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langfuse.langchain import CallbackHandler
 from loguru import logger
 
 from api.utils.statics import default_llm_model, default_embedding_model, default_embedding_dimensions, default_embedding_numctx
@@ -14,6 +17,15 @@ def ollama_embeddings(dimensions:int = None, model:str = None, num_ctx:int = Non
         dimensions=default_embedding_dimensions if dimensions is None else dimensions,
         num_ctx=default_embedding_numctx if num_ctx is None else num_ctx 
     )
+def tracing_config(trace_name: str, tags: List[str] = None) -> Dict[str, Any]:
+    """RunnableConfig that sends the run to Langfuse (keys from .env). Empty config (no tracing) if LANGFUSE_PUBLIC_KEY isn't set"""
+    if not os.environ.get("LANGFUSE_PUBLIC_KEY"):
+        return {}
+    return {
+        "callbacks": [CallbackHandler()],
+        "metadata": {"langfuse_trace_name": trace_name, "langfuse_tags": tags if tags is not None else []}
+    }
+
 class HTTPLoggedException(HTTPException):
     def __init__(self,status_code:int, detail:str):
         logger.error(f"-- APP EXCEPTION >> {status_code} >> {detail}")

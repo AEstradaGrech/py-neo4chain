@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from loguru import logger
 from deepagents import create_deep_agent
 from langchain.agents import create_agent
+from api.utils.helpers import tracing_config
 router = APIRouter(prefix="/tests")
 import os
 
@@ -22,7 +23,8 @@ async def check()-> str:
         system_prompt=instructions,
     )
     d_result = await d_agent.ainvoke(
-            {"messages": [{"role": "user", "content": "Hi"}]}
+            {"messages": [{"role": "user", "content": "Hi"}]},
+            config=tracing_config("ollama-check-deep-agent", ["devtests"])
     )
     logger.warning("DEEP AGENT RESULT")
     print(d_result["messages"][-1].content)
@@ -34,7 +36,8 @@ async def check()-> str:
     )
 
     result = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": "Hi"}]}
+        {"messages": [{"role": "user", "content": "Hi"}]},
+        config=tracing_config("ollama-check-agent", ["devtests"])
     )
     logger.warning("AGENT RESULT")
     print(result["messages"][-1].content)

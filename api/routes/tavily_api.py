@@ -1,6 +1,6 @@
 from typing import Any, Dict
 from api.models.dto_schemas import TavilyAgentRequest
-from api.utils.helpers import HTTPLoggedException
+from api.utils.helpers import HTTPLoggedException, tracing_config
 from api.utils.statics import default_llm_model, tavily_research_poll_secs, tavily_research_timeout_secs
 from api.mappers.tavily_mapper import toCrawlTool, toMapTool, toResearchTool, toSearchTool, toExtractTool
 from fastapi import APIRouter
@@ -29,7 +29,7 @@ async def service_check() -> str:
     # Use the agent
     response = await agent.ainvoke({
         "messages": [{"role": "user", "content": "What is the most popular sport in the world? Include only Wikipedia sources."}]
-    })
+    }, config=tracing_config("tavily-check", ["tavily", "search"]))
     logger.warning(f"-- AGENT RESPONSE --> {response["messages"][-1]}")
     return response["messages"][-1].content
 
@@ -48,7 +48,7 @@ async def search_agent_check(req: TavilyAgentRequest) -> str:
     # Use the agent
     response = await agent.ainvoke({
         "messages": [{"role": "user", "content": req.input}]
-    })
+    }, config=tracing_config("tavily-search", ["tavily", "search"]))
     logger.warning(f"-- AGENT RESPONSE --> {response["messages"][0:]}")
     return response["messages"][-1].content
 
@@ -67,7 +67,7 @@ async def extract_agent_check(req: TavilyAgentRequest) -> str:
     # Use the agent
     response = await agent.ainvoke({
         "messages": [{"role": "user", "content": req.input}]
-    })
+    }, config=tracing_config("tavily-extract", ["tavily", "extract"]))
     logger.warning(f"-- AGENT RESPONSE --> {response["messages"][0:]}")
     return response["messages"][-1].content
 
@@ -86,7 +86,7 @@ async def map_agent_check(req: TavilyAgentRequest) -> str:
     # Use the agent
     response = await agent.ainvoke({
         "messages": [{"role": "user", "content": req.input}]
-    })
+    }, config=tracing_config("tavily-map", ["tavily", "map"]))
     logger.warning(f"-- AGENT RESPONSE --> {response["messages"][0:]}")
     return response["messages"][-1].content
 
@@ -105,7 +105,7 @@ async def crawl_agent_check(req: TavilyAgentRequest) -> str:
     # Use the agent
     response = await agent.ainvoke({
         "messages": [{"role": "user", "content": req.input}]
-    })
+    }, config=tracing_config("tavily-crawl", ["tavily", "crawl"]))
     logger.warning(f"-- AGENT RESPONSE --> {response["messages"][0:]}")
     return response["messages"][-1].content
 
@@ -124,7 +124,7 @@ async def research_agent_check(req: TavilyAgentRequest) -> str:
     # Use the agent
     response = await agent.ainvoke({
         "messages": [{"role": "user", "content": req.input}]
-    })
+    }, config=tracing_config("tavily-research", ["tavily", "research"]))
     logger.warning(f"-- AGENT RESPONSE --> {response["messages"][0:]}")
     return response["messages"][-1].content
 

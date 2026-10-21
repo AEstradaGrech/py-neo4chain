@@ -8,3 +8,4 @@ langchain-tavily
 langchain-neo4j
 neo4j
 pydantic
+langfuse
