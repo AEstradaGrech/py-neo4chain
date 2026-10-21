@@ -1,10 +1,15 @@
 import os
+from typing import List
+from langchain_ollama import OllamaEmbeddings
 from loguru import logger
-from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
+from langchain_neo4j import Neo4jGraph, GraphCypherQAChain, Neo4jVector
+from neo4j_graphrag.types import SearchType
+from langchain_core.documents import Document
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import CharacterTextSplitter
 from api.utils.statics import default_neo4jdb, CYPHER_GENERATION_TEMPLATE, EXPANDED_CYPHER_GENERATION_TEMPLATE
-from api.utils.helpers import ollama
+from api.utils.helpers import ollama, ollama_embeddings
 from langchain_core.prompts import PromptTemplate
-from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,6 +35,44 @@ class Neo4jService:
         graph.refresh_schema()
         return graph
 
+    def get_store_from_docs(self, docs:List[Document], hybrid:bool = False, embedder:OllamaEmbeddings = None) -> Neo4jVector:
+        return Neo4jVector.from_documents(
+            documents=docs,
+            embedding=embedder if embedder is None else ollama_embeddings(),
+            search_type=SearchType.HYBRID if hybrid else SearchType.VECTOR,
+            url=os.environ["NEO_URI"], 
+            username=os.environ["NEO_USERNAME"], 
+            password=os.environ["NEO_PASS"]
+        )
+
+    def get_store_from_index(self, index_name:str, index_keyword:str, hybrid:bool = False, embedder:OllamaEmbeddings = None) -> Neo4jVector:
+        return Neo4jVector.from_existing_index(
+            index_name=index_name,
+            keyword_index_name=index_keyword,
+            embedding=embedder if embedder is None else ollama_embeddings(),
+            search_type=SearchType.HYBRID if hybrid else SearchType.VECTOR,
+            url=os.environ["NEO_URI"], 
+            username=os.environ["NEO_USERNAME"], 
+            password=os.environ["NEO_PASS"]
+        )
+
+    def get_store_from_graph(self, node_label:str, node_properties: List[str], hybrid:bool = False, embedder:OllamaEmbeddings = None) -> Neo4jVector:
+        return Neo4jVector.from_existing_graph(
+            embedding=embedder if embedder is None else ollama_embeddings(),
+            node_label=node_label,
+            text_node_properties=node_properties,
+            search_type=SearchType.HYBRID if hybrid else SearchType.VECTOR,
+            url=os.environ["NEO_URI"], 
+            username=os.environ["NEO_USERNAME"], 
+            password=os.environ["NEO_PASS"]
+        )
+
+    def split_text_file(self, path:str, chunk_size:int = 1000, overlap:int = 20):
+        loader = TextLoader(f"{path}.txt",encoding='utf-8')
+        documents = loader.load()
+        text_splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
+        return text_splitter.split_documents(documents)
+    
     async def graph_qa_from_ollama(self, query:str, db_name:str = None) -> str:
         graph = self.get_graph()
         

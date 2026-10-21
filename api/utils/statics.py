@@ -1,5 +1,7 @@
 default_llm_model="gpt-oss:20b"
 default_embedding_model = "nomic-embed-text"
+default_embedding_dimensions = 512
+default_embedding_numctx = 1536
 default_neo4jdb = "neo4j"
 
 CYPHER_GENERATION_TEMPLATE = """
