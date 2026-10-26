@@ -1,2 +1,2 @@
 # py-neo4chain
-FastAPI microservice for LangChain Neo4j agents, for RAG applications and Knowledge Graph Constructionn, with web search tool (by Tavily)
+FastAPI microservice for knowledge-graph RAG: LangChain agents over Neo4j (graph building, graph QA, vector search), Tavily web search and Langfuse tracing. (#WIP)
