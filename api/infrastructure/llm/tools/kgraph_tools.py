@@ -7,14 +7,38 @@ from langgraph.types import Command
 
 from api.infrastructure.llm.models.agent_utils import tool_error, tool_success, update_state
 
-
-
+PERCEIVED_USER_GOAL = "perceived_user_goal"
 APPROVED_USER_GOAL = "approved_user_goal"
 ALL_AVAILABLE_FILES = "all_available_files"
 SUGGESTED_FILES = "suggested_files"
 APPROVED_FILES = "approved_files"
 DATA_DIR = "./data"
 
+@tool
+def set_perceived_user_goal(kind_of_graph: str, graph_description:str, tool_runtime:ToolRuntime):
+    """Sets the perceived user's goal, including the kind of graph and its description.
+    
+    Args:
+        kind_of_graph: 2-3 word definition of the kind of graph, for example "recent US patents"
+        graph_description: a single paragraph description of the graph, summarizing the user's intent
+    """
+    user_goal_data = {"kind_of_graph": kind_of_graph, "graph_description": graph_description}
+    
+    return update_state(tool_runtime, PERCEIVED_USER_GOAL, user_goal_data)
+
+@tool
+def approve_perceived_user_goal(tool_runtime:ToolRuntime):
+    """Upon approval from user, will record the perceived user goal as the approved user goal.
+    
+    Only call this tool if the user has explicitly approved the perceived user goal.
+    """
+    # Trust, but verify. 
+    # Require that the perceived goal was set before approving it. 
+    # Notice the tool error helps the agent take
+    if PERCEIVED_USER_GOAL not in tool_runtime.state:
+        return tool_error("perceived_user_goal not set. Set perceived user goal first, or ask clarifying questions if you are unsure.")
+    
+    return update_state(tool_runtime, APPROVED_USER_GOAL, tool_runtime.state[PERCEIVED_USER_GOAL])
 
 @tool
 def get_approved_user_goal(tool_runtime: ToolRuntime) -> Dict[str, Any]:

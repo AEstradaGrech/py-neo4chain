@@ -1,5 +1,5 @@
 
-from api.models.dto_schemas import TavilyExtractConfig, TavilyMapCrawlConfig, TavilyResearchConfig, TavilySearchConfig
+from api.models.tavily_schemas import TavilyExtractConfig, TavilyMapCrawlConfig, TavilyResearchConfig, TavilySearchConfig
 from langchain_tavily import TavilySearch, TavilyExtract, TavilyMap, TavilyCrawl, TavilyResearch
 
 def toSearchTool(req: TavilySearchConfig) -> TavilySearch:

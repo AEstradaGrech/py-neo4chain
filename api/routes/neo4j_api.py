@@ -6,7 +6,7 @@ from loguru import logger
 from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
 from langchain_core.documents import Document
 from api.mappers.neo4j_mapper import schemaToDto
-from api.models.dto_schemas import Neo4jSchema, TextFileVectorSearch
+from api.models.tavily_schemas import Neo4jSchema, TextFileVectorSearch
 from api.services.neo4j_service import Neo4jService
 
 
@@ -56,7 +56,7 @@ RETURN actor.name, m.title, coactors.name
 
 @router.post("/check/file/similarity-search")
 async def similarity_search(req: TextFileVectorSearch) -> List[Document]:
-    svc = Neo4jService(db_name="sotu")
+    svc = Neo4jService()
     chunks = svc.split_text_file(req.textfile_path, chunk_size=req.chunk_size if req.chunk_size is not None else 1000, overlap=req.chunk_overlap if req.chunk_overlap is not None else 20)
     store = svc.get_store_from_docs(docs=chunks)
     # individual API
@@ -64,3 +64,7 @@ async def similarity_search(req: TextFileVectorSearch) -> List[Document]:
     retriever = store.as_retriever(search_type="similarity_score_threshold",search_kwargs={"k": req.k if req.k is not None else 4, "score_threshold":0.0 if req.min_score is None else req.min_score})
     results = retriever.invoke(req.query)
     return results
+
+@router.post("/kgraph")
+async def user_intent():
+    return "WIP"

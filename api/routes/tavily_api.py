@@ -1,5 +1,5 @@
 from typing import Any, Dict
-from api.models.dto_schemas import TavilyAgentRequest
+from api.models.tavily_schemas import TavilyAgentRequest
 from api.utils.helpers import HTTPLoggedException, tracing_config
 from api.utils.statics import default_llm_model, tavily_research_poll_secs, tavily_research_timeout_secs
 from api.mappers.tavily_mapper import toCrawlTool, toMapTool, toResearchTool, toSearchTool, toExtractTool

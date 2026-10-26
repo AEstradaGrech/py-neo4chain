@@ -1,5 +1,5 @@
 
-from api.models.dto_schemas import Neo4jSchema
+from api.models.tavily_schemas import Neo4jSchema
 
 
 def schemaToDto(schema:str)-> Neo4jSchema:

@@ -5,6 +5,7 @@ from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langfuse.langchain import CallbackHandler
 from loguru import logger
 
+from api.models.kgraph_schemas import MessageDto
 from api.utils.statics import default_llm_model, default_embedding_model, default_embedding_dimensions, default_embedding_numctx
 
 def ollama(model:str = None, temp:float = 0.7, max_tokens:int = 600, ctx_len:int = 4096, verbose:bool = False) -> ChatOllama:
@@ -25,6 +26,9 @@ def tracing_config(trace_name: str, tags: List[str] = None) -> Dict[str, Any]:
         "callbacks": [CallbackHandler()],
         "metadata": {"langfuse_trace_name": trace_name, "langfuse_tags": tags if tags is not None else []}
     }
+
+def kgraph_intent_tracing() -> Dict[str, Any]:
+    return tracing_config("kgraph", ["kgraph", "user_intent"])
 
 class HTTPLoggedException(HTTPException):
     def __init__(self,status_code:int, detail:str):
