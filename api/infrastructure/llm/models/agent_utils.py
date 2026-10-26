@@ -67,6 +67,13 @@ RETURN t.thread_id AS thread_id,
 ORDER BY updated_at DESC
 """
 
+FIND_THREAD_QUERY = """
+MATCH (t:Thread {thread_id: $thread_id})-[:HAS_CHECKPOINT]->(c:Checkpoint)
+RETURN t.thread_id AS thread_id,
+       count(c) AS checkpoints,
+       toString(min(c.created_at)) AS created_at,
+       toString(max(c.created_at)) AS updated_at
+"""
 # AsyncNeo4jSaver.adelete_thread doesn't delete the thread branches: they would be left orphaned
 DELETE_THREAD_BRANCHES_QUERY = """
 MATCH (:Thread {thread_id: $thread_id})-[:HAS_BRANCH]->(b:Branch)

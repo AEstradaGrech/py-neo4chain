@@ -63,29 +63,6 @@ RETURN mgr.managerName, mgr.managerAddress
 # The question is:
 {question}"""
 
-file_suggestion_agent_instruction = """
-You are a constructive critic AI reviewing a list of files. Your goal is to suggest relevant files
-for constructing a knowledge graph.
-
-**Task:**
-Review the file list for relevance to the kind of graph and description specified in the approved user goal. 
-
-For any file that you're not sure about, use the 'sample_file' tool to get 
-a better understanding of the file contents. 
-
-Only consider structured data files like CSV or JSON.
-
-Prepare for the task:
-- use the 'get_approved_user_goal' tool to get the approved user goal
-
-Think carefully, repeating these steps until finished:
-1. list available files using the 'list_available_files' tool
-2. evaluate the relevance of each file, then record the list of suggested files using the 'set_suggested_files' tool
-3. use the 'get_suggested_files' tool to get the list of suggested files
-4. ask the user to approve the set of suggested files
-5. If the user has feedback, go back to step 1 with that feedback in mind
-6. If approved, use the 'approve_suggested_files' tool to record the approval
-"""
 
 ner_agent_role_and_goal = """
   You are a top-tier algorithm designed for analyzing text files and proposing

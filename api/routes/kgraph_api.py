@@ -2,10 +2,12 @@
 from typing import Any, Dict, List
 import uuid
 from fastapi import APIRouter, Request
-from api.infrastructure.llm.models.agent_utils import DELETE_THREAD_BRANCHES_QUERY, LIST_THREADS_QUERY, agent_config, get_agent_state, get_thread_values
+from api.infrastructure.llm.models import file_suggester_agent
+from api.infrastructure.llm.models.agent_utils import DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, agent_config, get_agent_state, get_thread_values
 from api.infrastructure.llm.tools.kgraph_tools import APPROVED_USER_GOAL, PERCEIVED_USER_GOAL
 from api.models.kgraph_schemas import AgentRequestDto, MessageDto
 from api.infrastructure.llm.models.user_intent_agent import user_intent_agent
+from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
 from api.utils.helpers import HTTPLoggedException, kgraph_intent_tracing
 from api.mappers.prompting_mapper import to_openai_messages
 from loguru import logger
@@ -16,6 +18,12 @@ router = APIRouter(prefix="/dlai/knowledge-graph-construction")
 async def get_threads(request: Request) -> List[Dict[str, Any]]:
     records, _, _ = await request.app.state.neo4j_driver.execute_query(LIST_THREADS_QUERY)
     return [r.data() for r in records]
+
+@router.get("/threads/{thread_id}")
+async def get_thread(thread_id: str, request:Request) -> Dict[str, Any] | None:
+    driver = request.app.state.neo4j_driver
+    thread, _, _ = await driver.execute_query(FIND_THREAD_QUERY, thread_id=thread_id)
+    return thread[0].data() if len(thread) > 0 else None
 
 @router.delete("/threads/{thread_id}")
 async def delete_thread(thread_id: str, request: Request) -> Dict[str, Any]:
@@ -64,3 +72,17 @@ async def user_intent(req: AgentRequestDto, request: Request) -> Any:
         PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
         APPROVED_USER_GOAL: response.get(APPROVED_USER_GOAL),
     }
+
+@router.post("/file-suggestion/list")
+async def files_suggestion(req: AgentRequestDto, request: Request) -> Any:
+    if req.thread_id is None or req.thread_id == "":
+        raise HTTPLoggedException(status_code=400, detail="No thread id has been found in the request.")
+    thread = await get_thread(thread_id=req.thread_id, request=request)
+    if thread is None or thread["thread_id"] != req.thread_id:
+        raise HTTPLoggedException(status_code=404, detail="Request thread id not found in DB")
+    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    messages = [{"role": "user", "content": req.input}]
+    agent = file_suggester_agent(model=req.model, description="default", checkpointer=request.app.state.neo4j_saver)
+    #thread_state = await get_agent_state(agent, thread_id=req.thread_id)
+    response = await agent.ainvoke({"messages" : messages},config=config)
+    return response
