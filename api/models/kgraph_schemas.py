@@ -13,5 +13,8 @@ class AgentRequestDto(BaseModel):
     thread_id: Optional[str] = Field(description="Thread ID. Leave empty to create a new thread id", default=None)
     model:Optional[str] = Field(description="model to use with provider in this format -> <provider>:<model>. Empty defaults to ollama:gpt-oss:20b.", default=None)
     sysmsg:Optional[str] = Field(description="Instruction message for the agent", default=None)
+
+class KGAgentRequestDto(AgentRequestDto):
+    comfy: bool = Field(description="Flag to indicate whether to trust the agent generated state variables in case of tool success or wait for user approval", default=False)
     
 

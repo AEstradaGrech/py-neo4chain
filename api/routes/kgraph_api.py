@@ -4,8 +4,8 @@ import uuid
 from fastapi import APIRouter, Request
 from api.infrastructure.llm.models import file_suggester_agent
 from api.infrastructure.llm.models.agent_utils import DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, agent_config, get_agent_state, get_thread_values
-from api.infrastructure.llm.tools.kgraph_tools import APPROVED_USER_GOAL, PERCEIVED_USER_GOAL
-from api.models.kgraph_schemas import AgentRequestDto, MessageDto
+from api.infrastructure.llm.tools.kgraph_tools import ALL_AVAILABLE_FILES, APPROVED_FILES, APPROVED_USER_GOAL, PERCEIVED_USER_GOAL, SUGGESTED_FILES
+from api.models.kgraph_schemas import AgentRequestDto, KGAgentRequestDto, MessageDto
 from api.infrastructure.llm.models.user_intent_agent import user_intent_agent
 from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
 from api.utils.helpers import HTTPLoggedException, kgraph_intent_tracing
@@ -51,7 +51,7 @@ async def get_thread_messages(thread_id: str, request: Request):
 # TEST INPUT: "I'd like a bill of materials graph (BOM graph) which includes all levels from suppliers to finished product, which can support root-cause analysis."
 # CLARIFY: "I'd like a bill of materials graph (BOM graph) which includes all levels from suppliers to finished product, which can support root-cause analysis."
 @router.post("/user-intent")
-async def user_intent(req: AgentRequestDto, request: Request) -> Any:
+async def user_intent(req: KGAgentRequestDto, request: Request) -> Any:
     thread_id = req.thread_id or str(uuid.uuid4())
     agent = user_intent_agent(model=req.model, description="default", checkpointer=request.app.state.neo4j_saver)
     config = agent_config(thread_id, kgraph_intent_tracing())
@@ -62,19 +62,25 @@ async def user_intent(req: AgentRequestDto, request: Request) -> Any:
         #the LLM may have asked a clarifying question. offer some more details
         return response     
     # ELSE: Optimistically presume approval.
-    messages = [{"role": "user", "content": "Approve that goal."}]
-    response = await agent.ainvoke({"messages" : messages},config=config)
-
+    if req.comfy:
+        messages = [{"role": "user", "content": "Approve that goal."}]
+        response = await agent.ainvoke({"messages" : messages},config=config)
+        return {
+            "thread_id": thread_id,
+            "status": "approved" if APPROVED_USER_GOAL in response else "needs_clarification",
+            "message": response["messages"][-1].content,
+            PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
+            APPROVED_USER_GOAL: response.get(APPROVED_USER_GOAL),
+        }
     return {
-        "thread_id": thread_id,
-        "status": "approved" if APPROVED_USER_GOAL in response else "needs_clarification",
-        "message": response["messages"][-1].content,
-        PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
-        APPROVED_USER_GOAL: response.get(APPROVED_USER_GOAL),
-    }
+            "thread_id": thread_id,
+            "status": "goal_perceived" if PERCEIVED_USER_GOAL in response else "needs_clarification",
+            "message": response["messages"][-1].content,
+            PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL)
+        }
 
 @router.post("/file-suggestion/list")
-async def files_suggestion(req: AgentRequestDto, request: Request) -> Any:
+async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
     if req.thread_id is None or req.thread_id == "":
         raise HTTPLoggedException(status_code=400, detail="No thread id has been found in the request.")
     thread = await get_thread(thread_id=req.thread_id, request=request)
@@ -85,4 +91,34 @@ async def files_suggestion(req: AgentRequestDto, request: Request) -> Any:
     agent = file_suggester_agent(model=req.model, description="default", checkpointer=request.app.state.neo4j_saver)
     #thread_state = await get_agent_state(agent, thread_id=req.thread_id)
     response = await agent.ainvoke({"messages" : messages},config=config)
-    return response
+    if ALL_AVAILABLE_FILES not in response:
+        return {
+            "thread_id": req.thread_id,
+            "status": "no available files",
+            "message": response["messages"][-1].content
+        }
+    if SUGGESTED_FILES not in response:
+        return {
+            "thread_id": req.thread_id,
+            "status": "not_sure",
+            "message": response["messages"][-1].content,
+            ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES)
+        }
+    if req.comfy:
+      messages = [{"role": "user", "content": "Ok, use the suggested files"}]
+      response = await agent.ainvoke({"messages": messages}, config=config)
+      return {
+                "thread_id": req.thread_id,
+                "status": "files_selected" if APPROVED_FILES in response else "file_approval_failure",
+                "message": response["messages"][-1].content,
+                APPROVED_FILES: response.get(APPROVED_FILES),
+                SUGGESTED_FILES: response.get(SUGGESTED_FILES),
+                ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
+            }
+    return {
+            "thread_id": req.thread_id,
+            "status": "success" if SUGGESTED_FILES in response else "not_sure",
+            "message": response["messages"][-1].content,
+            SUGGESTED_FILES: response.get(SUGGESTED_FILES),
+            ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
+        }
