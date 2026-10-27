@@ -2,9 +2,10 @@ from typing import Any
 
 from api.infrastructure.llm.models.agent_utils import KGState
 from api.infrastructure.llm.tools.kgraph_tools import approve_suggested_files, get_approved_user_goal, get_suggested_files, list_available_files, sample_file, set_suggested_files
-from api.utils.statics import default_llm_model
+from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
 
+DEFAULT_AGENT_NAME = "file_suggester_agent"
 DEFAULT_DESCRIPTION = "Helps the user select files to import."
 
 file_suggestion_agent_instruction = """
@@ -33,11 +34,14 @@ Think carefully, repeating these steps until finished:
 6. If approved, use the 'approve_suggested_files' tool to record the approval
 """
 
-def file_suggester_agent(checkpointer: Any, model:str = None, description:str = None):
-    if description.lower() == "default":
+def file_suggester_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None):
+    if name is not None and name.lower() == "default":
+        name = DEFAULT_AGENT_NAME
+    if description is not None and description.lower() == "default":
         description = DEFAULT_DESCRIPTION
     return create_agent(
-        model=f"ollama:{model}" if model is not None else f"ollama:{default_llm_model}",
+        model=agent_chat_model(model),
+        name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
         tools=[

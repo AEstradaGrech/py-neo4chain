@@ -1,4 +1,8 @@
 default_llm_model="gpt-oss:20b"
+# context window for agents: Ollama defaults to 4096 tokens, which agentic prompts (instructions + tool schemas + tool outputs) overflow
+default_agent_numctx = 16384
+# times /propose-schema nudges the schema proposal agent when it finishes without proposing any construction
+schema_proposal_max_nudges = 2
 default_embedding_model = "nomic-embed-text"
 default_embedding_dimensions = 512
 default_embedding_numctx = 1536

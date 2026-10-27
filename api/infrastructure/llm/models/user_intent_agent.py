@@ -2,10 +2,11 @@
 #"Helps the user ideate on a knowledge graph use case."
 from typing import Any
 from api.infrastructure.llm.models.agent_utils import KGState
-from api.infrastructure.llm.tools.kgraph_tools import approve_perceived_user_goal, set_perceived_user_goal
-from api.utils.statics import default_llm_model
+from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
+from api.infrastructure.llm.tools.kgraph_tools import approve_perceived_user_goal, set_perceived_user_goal
 
+DEFAULT_AGENT_NAME = "user_intent_analyzer_agent"
 DEFAULT_DESCRIPTION = "Helps the user ideate on a knowledge graph use case."
 
 agent_role_and_goal = """
@@ -40,11 +41,14 @@ Think carefully and collaborate with the user:
 5. If the user agrees, use the 'approve_perceived_user_goal' tool to approve the user goal. This will save the goal in state under the 'approved_user_goal' key.
 """
 
-def user_intent_agent(checkpointer: Any, model:str = None, description:str = None):
-    if description.lower() == "default":
+def user_intent_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None):
+    if name is not None and name.lower() == "default":
+        name = DEFAULT_AGENT_NAME
+    if description is not None and description.lower() == "default":
         description = DEFAULT_DESCRIPTION
     return create_agent(
-        model=f"ollama:{model}" if model is not None else f"ollama:{default_llm_model}",
+        model=agent_chat_model(model),
+        name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
         tools=[set_perceived_user_goal, approve_perceived_user_goal],

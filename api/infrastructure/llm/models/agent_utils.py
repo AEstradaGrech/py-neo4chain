@@ -1,6 +1,6 @@
 
 import json
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 from fastapi import Request
 from langchain.agents import AgentState
 from langchain_core.messages import ToolMessage
@@ -10,14 +10,29 @@ from typing_extensions import NotRequired
 
 from api.utils.helpers import HTTPLoggedException
 
+def merge_dicts(current: Dict[str, Any] | None, update: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Reducer: merges the update into the current dict. A None value removes that key"""
+    merged = {**(current or {}), **(update or {})}
+    return {k: v for k, v in merged.items() if v is not None}
+
 class KGState(AgentState):
     """Agent state shared between tool calls.
     Pass it as create_agent(state_schema=KGState): Command updates on keys not declared here are silently dropped"""
-    perceived_user_goal: NotRequired[str]
+    perceived_user_goal: NotRequired[Dict[str, Any]]
     approved_user_goal: NotRequired[Dict[str, Any]]
     all_available_files: NotRequired[List[str]]
     suggested_files: NotRequired[List[str]]
     approved_files: NotRequired[List[str]]
+    # merge_dicts reducer: tools write only the entries they add ({key: rule}) or remove ({key: None})
+    proposed_construction_plan: NotRequired[Annotated[Dict[str, Any], merge_dicts]]
+    approved_construction_plan: NotRequired[Dict[str, Any]]
+    # schema critic output ('valid' or 'retry' + problems), read by the schema proposal agent prompt
+    feedback: NotRequired[str]
+
+def dict_delta(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+    """Changes from `before` to `after` as a merge_dicts update: new/changed entries, and removed ones as None.
+    Writing `after` as is to a merge_dicts key would merge the removed entries back"""
+    return {**{k: None for k in before if k not in after}, **{k: v for k, v in after.items() if before.get(k) != v}}
 
 def tool_success(key: str, result: Any) -> Dict[str, Any]:
     return {"status": "success", key: result}
@@ -25,9 +40,16 @@ def tool_success(key: str, result: Any) -> Dict[str, Any]:
 def tool_error(message: str) -> Dict[str, Any]:
     return {"status": "error", "error_message": message}
 
+def state_update(tool_runtime: ToolRuntime, updates: Dict[str, Any], result: Dict[str, Any]) -> Command:
+    """Writes `updates` in the agent state and answers the tool call with `result` (what the LLM sees)"""
+    return Command(update={
+        **updates,
+        "messages": [ToolMessage(content=json.dumps(result), tool_call_id=tool_runtime.tool_call_id)],
+    })
+
 def update_state(tool_runtime: ToolRuntime, key: str, value: Any) -> Command:
     """Writes key=value in the agent state and answers the tool call.
-    Assigning tool_runtime.state[key] directly is lost: the state only changes through what a tool returns"""
+    Assigning tool_runtime.state[key] directly fails: the state only changes through what a tool returns"""
     return Command(update={
         key: value,
         # a tool returning a Command must also return the ToolMessage that closes its tool call
