@@ -4,11 +4,22 @@ from typing import Annotated, Any, Dict, List
 from fastapi import Request
 from langchain.agents import AgentState
 from langchain_core.messages import ToolMessage
+from langchain_neo4j import AsyncNeo4jSaver
 from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
 from typing_extensions import NotRequired
-
 from api.utils.helpers import HTTPLoggedException
+
+PERCEIVED_USER_GOAL = "perceived_user_goal"
+APPROVED_USER_GOAL = "approved_user_goal"
+ALL_AVAILABLE_FILES = "all_available_files"
+SUGGESTED_FILES = "suggested_files"
+APPROVED_FILES = "approved_files"
+SEARCH_RESULTS = "search_results"
+PROPOSED_CONSTRUCTION_PLAN = "proposed_construction_plan"
+NODE_CONSTRUCTION = "node_construction"
+RELATIONSHIP_CONSTRUCTION = "relationship_construction"
+APPROVED_CONSTRUCTION_PLAN = "approved_construction_plan"
 
 def merge_dicts(current: Dict[str, Any] | None, update: Dict[str, Any] | None) -> Dict[str, Any]:
     """Reducer: merges the update into the current dict. A None value removes that key"""
@@ -80,6 +91,12 @@ async def get_thread_values(request: Request, thread_id: str) -> dict:
     # skip LangGraph internal channels (__pregel_tasks, branch:to:model...)
     return {k: v for k, v in checkpoint.checkpoint["channel_values"].items() if not k.startswith("__") and ":" not in k}
 
+agent_preset_names = {
+    PERCEIVED_USER_GOAL: "perceived_user_goal",
+    SUGGESTED_FILES:"suggested_files",
+    PROPOSED_CONSTRUCTION_PLAN: "proposed_construction_plan"
+}
+        
 LIST_THREADS_QUERY = """
 MATCH (t:Thread {checkpoint_ns: ""})-[:HAS_CHECKPOINT]->(c:Checkpoint)
 RETURN t.thread_id AS thread_id,

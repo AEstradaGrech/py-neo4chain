@@ -1,7 +1,7 @@
 
 #"Helps the user ideate on a knowledge graph use case."
 from typing import Any
-from api.infrastructure.llm.models.agent_utils import KGState
+from api.infrastructure.llm.agent_utils import KGState
 from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
 from api.infrastructure.llm.tools.kgraph_tools import approve_perceived_user_goal, set_perceived_user_goal

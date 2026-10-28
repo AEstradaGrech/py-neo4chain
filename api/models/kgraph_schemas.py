@@ -1,6 +1,6 @@
 
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,3 +23,14 @@ class KGSchemaRequestDto(AgentRequestDto):
     num_refinements: Optional[int] = Field(description="Num of iterations for the schema_critic_agent. None or 0 to get the raw output of the schema_proposal agent", default=None)
     
 
+class KGApproveRequestDto(BaseModel):
+    input:Optional[str] = Field(description="User input", default="Ok, approved.")
+    thread_id: Optional[str] = Field(description="Thread ID. Leave empty to create a new thread id", default=None)
+    state_key: str = Field(description="KGState KEY to approve")
+
+class KGStepResponseDto(BaseModel):
+    thread_id: str = Field(description="Thread ID. Leave empty to create a new thread id")
+    state_key: str = Field(description="KGState KEY of the runned step")
+    status:str = Field(description="Tag with step status info")
+    message: Any = Field(description="LLM message (if any)", default=None)
+    output_state: dict[str, Any] = Field(description="Agent State to return", default={})

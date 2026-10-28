@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from typing_extensions import NotRequired
 
-from api.infrastructure.llm.models.agent_utils import KGState, dict_delta
+from api.infrastructure.llm.agent_utils import KGState, dict_delta
 from api.infrastructure.llm.tools.kgraph_tools import APPROVED_FILES, APPROVED_USER_GOAL, FEEDBACK, PROPOSED_CONSTRUCTION_PLAN
 
 DEFAULT_MAX_ITERATIONS = 2
