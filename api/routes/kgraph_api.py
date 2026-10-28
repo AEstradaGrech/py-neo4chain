@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Request
 from api.infrastructure.llm.agents_factory import AgentsFactory
 from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
-from api.infrastructure.llm.agent_utils import DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, agent_config, get_agent_state, get_thread_values
+from api.infrastructure.llm.agent_utils import DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, agent_config, get_agent_state, get_thread_values, step_response
 from api.infrastructure.llm.models.schema_critic_agent import schema_critic_agent
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE, schema_proposal_agent
 from api.infrastructure.llm.models.schema_refiner_agent import schema_refinement_loop
@@ -58,9 +58,7 @@ async def approve_step(req: KGApproveRequestDto, request: Request) -> Any:
     await validated_request_thread(req, request)
     factory = AgentsFactory()
     #check KEY exists
-    if factory.has_kg_preset(req.state_key) is False:
-        raise HTTPLoggedException(status_code=400, detail=f"No KG preset found with name: {req.state_key} ")
-    agent = factory.kgagent_by_step_key(req.state_key)
+    agent = factory.kgagent_by_step_key(step_key=req.state_key, model=req.model, checkpointer=request.app.state.neo4j_saver)
     state = await get_agent_state(agent, req.thread_id)
     if req.state_key not in state:
         raise HTTPLoggedException(status_code=400, detail="The step to approve is not present in the agent state")
@@ -80,27 +78,16 @@ async def user_intent(req: KGAgentRequestDto, request: Request) -> Any:
     print(response)
     if PERCEIVED_USER_GOAL not in response: 
         #the LLM may have asked a clarifying question. offer some more details
-        return response     
+        return KGStepResponseDto(
+            thread_id=req.thread_id,
+            state_key=PERCEIVED_USER_GOAL,
+            status="needs_clarification",
+            message=response["messages"][-1].content)     
     if req.comfy:
         messages = [{"role": "user", "content": "Approve that goal."}]
         response = await agent.ainvoke({"messages" : messages},config=config)
-        return KGStepResponseDto(
-                thread_id=req.thread_id,
-                state_key=PERCEIVED_USER_GOAL,
-                status="approved" if APPROVED_USER_GOAL in response else "needs_clarification",
-                message=response["messages"][-1].content,
-                output_state={
-                    PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
-                    APPROVED_USER_GOAL: response.get(APPROVED_USER_GOAL),
-            })
-    return KGStepResponseDto(
-        thread_id=req.thread_id,
-        state_key=PERCEIVED_USER_GOAL,
-        status="goal_perceived" if PERCEIVED_USER_GOAL in response else "needs_clarification",
-        message=response["messages"][-1].content,
-        output_state={
-            PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
-    })
+        return step_response(PERCEIVED_USER_GOAL,thread_id=thread_id,response=response, approved=True)
+    return step_response(PERCEIVED_USER_GOAL,thread_id=thread_id,response=response, approved=False)
 
 @router.post("/suggest-files")
 async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
@@ -115,13 +102,13 @@ async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
         return KGStepResponseDto(
             thread_id=req.thread_id,
             state_key=SUGGESTED_FILES,
-            status="not_sure",
+            status="needs_clarification",
             message=response["messages"][-1].content)
     if SUGGESTED_FILES not in response:
         return KGStepResponseDto(
             thread_id=req.thread_id,
             state_key=SUGGESTED_FILES,
-            status="not_sure",
+            status="needs_clarification",
             message=response["messages"][-1].content,
             output_state={
                 ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
@@ -129,25 +116,8 @@ async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
     if req.comfy:
       messages = [{"role": "user", "content": "Ok, use the suggested files"}]
       response = await agent.ainvoke({"messages": messages}, config=config)
-      return KGStepResponseDto(
-        thread_id=req.thread_id,
-        state_key=SUGGESTED_FILES,
-        status="files_selected" if APPROVED_FILES in response else "file_approval_failure",
-        message=response["messages"][-1].content,
-        output_state={
-            APPROVED_FILES: response.get(APPROVED_FILES),
-            SUGGESTED_FILES: response.get(SUGGESTED_FILES),
-            ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
-        })
-    return KGStepResponseDto(
-        thread_id=req.thread_id,
-        state_key=SUGGESTED_FILES,
-        status="success" if SUGGESTED_FILES in response else "not_sure",
-        message=response["messages"][-1].content,
-        output_state={
-            SUGGESTED_FILES: response.get(SUGGESTED_FILES),
-            ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
-        })
+      return step_response(SUGGESTED_FILES,thread_id=req.thread_id,response=response, approved=True)
+    return step_response(SUGGESTED_FILES,thread_id=req.thread_id,response=response, approved=False)
 
 @router.post("/propose-schema")
 async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:

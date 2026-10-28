@@ -8,8 +8,9 @@ from langchain_neo4j import AsyncNeo4jSaver
 from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
 from typing_extensions import NotRequired
+from api.models.kgraph_schemas import KGStepResponseDto
 from api.utils.helpers import HTTPLoggedException
-
+from enum import StrEnum
 PERCEIVED_USER_GOAL = "perceived_user_goal"
 APPROVED_USER_GOAL = "approved_user_goal"
 ALL_AVAILABLE_FILES = "all_available_files"
@@ -91,6 +92,55 @@ async def get_thread_values(request: Request, thread_id: str) -> dict:
     # skip LangGraph internal channels (__pregel_tasks, branch:to:model...)
     return {k: v for k, v in checkpoint.checkpoint["channel_values"].items() if not k.startswith("__") and ":" not in k}
 
+
+class StepKey(StrEnum):
+    PERCEIVED_USER_GOAL = "perceived_user_goal"
+    SUGGESTED_FILES = "suggested_files"
+    PROPOSED_CONSTRUCTION_PLAN = "proposed_construction_plan"
+
+def step_response(name:str, response, approved:bool, thread_id:str):
+    match name:
+        case StepKey.PERCEIVED_USER_GOAL:
+            if approved:
+                return KGStepResponseDto(
+                    thread_id=thread_id,
+                    state_key=PERCEIVED_USER_GOAL,
+                    status="approved" if APPROVED_USER_GOAL in response else "needs_clarification",
+                    message=response["messages"][-1].content,
+                    output_state={
+                        PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
+                        APPROVED_USER_GOAL: response.get(APPROVED_USER_GOAL),
+                })
+            return KGStepResponseDto(
+                thread_id=thread_id,
+                state_key=PERCEIVED_USER_GOAL,
+                status="goal_perceived" if PERCEIVED_USER_GOAL in response else "needs_clarification",
+                message=response["messages"][-1].content,
+                output_state={
+                    PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
+            })
+        case StepKey.SUGGESTED_FILES:
+            if approved:
+                return KGStepResponseDto(
+                    thread_id=thread_id,
+                    state_key=SUGGESTED_FILES,
+                    status="files_selected" if APPROVED_FILES in response else "file_approval_failure",
+                    message=response["messages"][-1].content,
+                    output_state={
+                        APPROVED_FILES: response.get(APPROVED_FILES),
+                        SUGGESTED_FILES: response.get(SUGGESTED_FILES),
+                        ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
+                })
+            return KGStepResponseDto(
+                thread_id=thread_id,
+                state_key=SUGGESTED_FILES,
+                status="success" if SUGGESTED_FILES in response else "needs_clarification",
+                message=response["messages"][-1].content,
+                output_state={
+                    SUGGESTED_FILES: response.get(SUGGESTED_FILES),
+                    ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
+                })
+            
 agent_preset_names = {
     PERCEIVED_USER_GOAL: "perceived_user_goal",
     SUGGESTED_FILES:"suggested_files",

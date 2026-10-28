@@ -27,6 +27,7 @@ class KGApproveRequestDto(BaseModel):
     input:Optional[str] = Field(description="User input", default="Ok, approved.")
     thread_id: Optional[str] = Field(description="Thread ID. Leave empty to create a new thread id", default=None)
     state_key: str = Field(description="KGState KEY to approve")
+    model:Optional[str] = Field(description="model to use with provider in this format -> <provider>:<model>. Empty defaults to ollama:gpt-oss:20b.", default=None)
 
 class KGStepResponseDto(BaseModel):
     thread_id: str = Field(description="Thread ID. Leave empty to create a new thread id")
