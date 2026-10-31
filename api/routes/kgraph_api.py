@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Request
 from api.infrastructure.llm.agents_factory import AgentsFactory
 from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
-from api.infrastructure.llm.agent_utils import DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, agent_config, get_agent_state, get_thread_values, step_response
+from api.infrastructure.llm.agent_utils import DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, StepKey, agent_config, get_agent_state, get_thread_values, step_response
 from api.infrastructure.llm.models.schema_critic_agent import schema_critic_agent
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE, schema_proposal_agent
 from api.infrastructure.llm.models.schema_refiner_agent import schema_refinement_loop
@@ -158,6 +158,27 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
         })
 
 
+
+@router.post("/refined-schema")
+async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
+    await validated_request_thread(req, request)
+    thread_values = await get_thread_values(request, req.thread_id)
+    if APPROVED_USER_GOAL not in thread_values or APPROVED_FILES not in thread_values:
+        raise HTTPLoggedException(status_code=409, detail="The thread has no approved user goal or approved files yet. Use /user-intent and /suggest-files first.")
+    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    factory = AgentsFactory()
+    schema_refiner = factory.kgagent_by_step_key(step_key=StepKey.SCHEMA_REFINER, checkpointer=request.app.state.neo4j_saver,model=req.model, retries=1)
+    messages = [{"role": "user", "content": req.input}]
+    response = await schema_refiner.ainvoke({"messages": messages}, config=config)
+    
+    return KGStepResponseDto(
+        thread_id=req.thread_id,
+        state_key=PROPOSED_CONSTRUCTION_PLAN,
+        status="graph_schema_proposal" if response.get(PROPOSED_CONSTRUCTION_PLAN) else "graph_construction_error",
+        message=response["messages"][-1].content,
+        output_state={
+            PROPOSED_CONSTRUCTION_PLAN: response.get(PROPOSED_CONSTRUCTION_PLAN, {})
+        })
 async def validated_request_thread(req: AgentRequestDto, request:Request) -> Any:
     if req.thread_id is None or req.thread_id == "":
         raise HTTPLoggedException(status_code=400, detail="No thread id has been found in the request.")

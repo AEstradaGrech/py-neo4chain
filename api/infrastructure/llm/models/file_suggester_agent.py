@@ -1,6 +1,6 @@
 from typing import Any
 
-from api.infrastructure.llm.agent_utils import KGState
+from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
 from api.infrastructure.llm.tools.kgraph_tools import approve_suggested_files, get_approved_user_goal, get_suggested_files, list_available_files, sample_file, set_suggested_files
 from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
@@ -34,7 +34,7 @@ Think carefully, repeating these steps until finished:
 6. If approved, use the 'approve_suggested_files' tool to record the approval
 """
 
-def file_suggester_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None):
+def file_suggester_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None, retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
@@ -44,6 +44,7 @@ def file_suggester_agent(checkpointer: Any, model:str = None, name:str = None, d
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
+        middleware=[ollama_retry_middleware(retries, retry_delay)] if retries > 0 else [],
         tools=[
             get_approved_user_goal, 
             list_available_files, 

@@ -7,10 +7,13 @@ from langchain_core.messages import ToolMessage
 from langchain_neo4j import AsyncNeo4jSaver
 from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
+from ollama import ResponseError
 from typing_extensions import NotRequired
 from api.models.kgraph_schemas import KGStepResponseDto
 from api.utils.helpers import HTTPLoggedException
 from enum import StrEnum
+from langchain.agents.middleware import ModelRetryMiddleware
+
 PERCEIVED_USER_GOAL = "perceived_user_goal"
 APPROVED_USER_GOAL = "approved_user_goal"
 ALL_AVAILABLE_FILES = "all_available_files"
@@ -21,6 +24,9 @@ PROPOSED_CONSTRUCTION_PLAN = "proposed_construction_plan"
 NODE_CONSTRUCTION = "node_construction"
 RELATIONSHIP_CONSTRUCTION = "relationship_construction"
 APPROVED_CONSTRUCTION_PLAN = "approved_construction_plan"
+
+FEEDBACK = "feedback"
+DATA_DIR = "./data"
 
 def merge_dicts(current: Dict[str, Any] | None, update: Dict[str, Any] | None) -> Dict[str, Any]:
     """Reducer: merges the update into the current dict. A None value removes that key"""
@@ -97,6 +103,8 @@ class StepKey(StrEnum):
     PERCEIVED_USER_GOAL = "perceived_user_goal"
     SUGGESTED_FILES = "suggested_files"
     PROPOSED_CONSTRUCTION_PLAN = "proposed_construction_plan"
+    SCHEMA_CRITIC = "schema_critic"
+    SCHEMA_REFINER = "schema_refiner"
 
 def step_response(name:str, response, approved:bool, thread_id:str):
     match name:
@@ -168,3 +176,10 @@ DELETE_THREAD_BRANCHES_QUERY = """
 MATCH (:Thread {thread_id: $thread_id})-[:HAS_BRANCH]->(b:Branch)
 DETACH DELETE b
 """
+
+def ollama_retry_middleware(retries:int = 1, initial_delay:float=0.5):
+    if retries <= 0:
+        retries = 1
+    if initial_delay < 0:
+        initial_delay = 0
+    return ModelRetryMiddleware(max_retries=retries, retry_on=(ResponseError,), initial_delay=initial_delay)

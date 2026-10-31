@@ -1,7 +1,7 @@
 
 #"Helps the user ideate on a knowledge graph use case."
 from typing import Any
-from api.infrastructure.llm.agent_utils import KGState
+from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
 from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
 from api.infrastructure.llm.tools.kgraph_tools import approve_perceived_user_goal, set_perceived_user_goal
@@ -41,7 +41,7 @@ Think carefully and collaborate with the user:
 5. If the user agrees, use the 'approve_perceived_user_goal' tool to approve the user goal. This will save the goal in state under the 'approved_user_goal' key.
 """
 
-def user_intent_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None):
+def user_intent_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
@@ -51,6 +51,7 @@ def user_intent_agent(checkpointer: Any, model:str = None, name:str = None, desc
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
+        middleware=[ollama_retry_middleware(retries, retry_delay)] if retries > 0 else [],
         tools=[set_perceived_user_goal, approve_perceived_user_goal],
         system_prompt=uset_intent_instruction(description)
     )
@@ -62,4 +63,4 @@ def uset_intent_instruction(description: None):
 {agent_output_definition}
 {agent_chain_of_thought_directions}
 """
-    return instruction if description is None else f"# AGENT DESCRIPTION: {description}\n\n{instruction}"
+    return instruction if description is None else f"# AGENT DESCRIPTION: {description}\n{instruction}"

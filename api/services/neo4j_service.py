@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Any, Dict, List
 from langchain_ollama import OllamaEmbeddings
 from loguru import logger
 from langchain_neo4j import Neo4jGraph, GraphCypherQAChain, Neo4jVector
@@ -8,7 +8,7 @@ from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import CharacterTextSplitter
 from api.utils.statics import default_neo4jdb, CYPHER_GENERATION_TEMPLATE, EXPANDED_CYPHER_GENERATION_TEMPLATE
-from api.utils.helpers import ollama, ollama_embeddings
+from api.utils.helpers import HTTPLoggedException, ollama, ollama_embeddings
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 
@@ -86,6 +86,124 @@ class Neo4jService:
         documents = loader.load()
         text_splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
         return text_splitter.split_documents(documents)
+
+    def neo4j_is_ready(self):
+        return self.get_graph().send_query("RETURN 'Neo4j is Ready!' as message")
+
+    def drop_neo4j_indexes(self):
+        """Drops and constraints and indexes present on the neo4j graph database
+
+        Returns:
+            Success or an error.
+        """
+        # remove all constraints
+        list_constraints = self.get_graph().send_query(
+            """SHOW CONSTRAINTS YIELD name"""
+        )
+        if (list_constraints == "error"):
+            return list_constraints
+        constraint_names = [row["name"] for row in list_constraints["query_result"]]
+        for constraint_name in constraint_names:
+            dropped_constraint = self.get_graph().send_query("""DROP CONSTRAINT $constraint_name""", {"constraint_name": constraint_name})
+            if (dropped_constraint["status"] == "error"):
+                return dropped_constraint
+
+        # remove all indexes
+        list_indexes = self.get_graph().send_query(
+            """SHOW INDEXES YIELD name"""
+        )
+        if (list_indexes == "error"):
+            raise HTTPLoggedException(status_code=500, detail=f"An error has occured while listing the DB indexes: {list_indexes}")
+        index_names = [row["name"] for row in list_indexes["query_result"]]
+        for index_name in index_names:
+            dropped_index = self.get_graph().send_query("""DROP INDEX $index_name""", {"index_name": index_name})
+            if (dropped_index["status"] == "error"):
+                raise HTTPLoggedException(status_code=500, detail=f"An error has occured while dropping the DB index: {dropped_index}")
+            
+        return list_indexes
+    
+    def clear_neo4j_data(self) -> bool:
+        """Clears all data from the neo4j graph database.
+
+        Use with caution! Confirm with the user
+        that they know this will completely reset the database.
+
+        Returns:
+            True if Success 
+        """
+        # First, remove all nodes and relationships in batches
+        data_removed = self.get_graph().send_query("""MATCH (n) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS""")
+        if (data_removed["status"] == "error") :
+            raise HTTPLoggedException(status_code=500, detail=f"An error has occured while clearing the DB data: {data_removed}")
+
+        return True
+
+    def get_apoc_procedure_names(self):
+        """List all APOC procedure names.
+        APOC (Awesome Procedures on Cypher) is a library of procedures and functions that extends the capabilities of Neo4j.
+
+        Returns:
+            Success with a list of APOC procedure names or an error.
+        """
+        cypher = "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN name"
+
+        result = self.get_graph().send_query(cypher)
+        
+        if result["status"] == "error":
+            return result
+        apoc_procedure_names = [row["name"] for row in result["query_result"]]
+
+        if len(apoc_procedure_names) == 0:
+            raise HTTPLoggedException(status_code=404,detail="APOC procedures not found. Please ensure APOC is installed in your Neo4j database.")
+        
+        return apoc_procedure_names
+
+    def get_apoc_version(self) -> Dict[str, Any]:
+        """Get the version of APOC installed in the Neo4j database.
+
+        Returns:
+            Success with the APOC version or an error.
+        """
+        cypher = "RETURN apoc.version() AS apoc_version"
+
+        result = self.get_graph().send_query(cypher)
+        
+        if result["status"] == "error":
+            raise HTTPLoggedException(status_code=404,detail="An error has occured while checking the apoc version")
+        
+        return result["query_result"][0]["apoc_version"]
+        
+    def get_neo4j_version(self) -> Dict[str, Any]:
+        """Get the version and edition of the Neo4j database.
+        
+        """
+        cypher = "CALL dbms.components() yield name, versions, edition unwind versions as version return name, version, edition"
+
+        result = self.get_graph().send_query(cypher)
+
+        return result
+        
+
+    def create_uniqueness_constraint(self, label: str,unique_property_key: str):
+        """Creates a uniqueness constraint for a node label and property key.
+        A uniqueness constraint ensures that no two nodes with the same label and property key have the same value.
+        This improves the performance and integrity of data import and later queries.
+
+        Args:
+            label: The label of the node to create a constraint for.
+            unique_property_key: The property key that should have a unique value.
+
+        Returns:
+            A dictionary with a status key ('success' or 'error').
+            On error, includes an 'error_message' key.
+        """    
+        # Use string formatting since Neo4j doesn't support parameterization of labels and property keys when creating a constraint
+        constraint_name = f"{label}_{unique_property_key}_constraint"
+        query = f"""CREATE CONSTRAINT `{constraint_name}` IF NOT EXISTS
+        FOR (n:`{label}`)
+        REQUIRE n.`{unique_property_key}` IS UNIQUE"""
+        results = self.get_graph().send_query(query)
+        return results
     
     async def graph_qa_from_ollama(self, query:str, db_name:str = None) -> str:
         graph = self.get_graph()

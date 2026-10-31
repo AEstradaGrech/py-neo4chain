@@ -1,5 +1,5 @@
 from typing import Any
-from api.infrastructure.llm.agent_utils import KGState
+from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
 from api.infrastructure.llm.tools.kgraph_tools import get_approved_files, get_approved_user_goal, get_proposed_construction_plan, sample_file, search_file
 from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
@@ -38,7 +38,7 @@ critic_agent_chain_of_thought_directions = """
     3. If the schema looks good, respond with a one word reply: 'valid'.
     4. If the schema has problems, respond with 'retry' and provide feedback as a concise bullet list of problems.
 """
-def schema_critic_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None):
+def schema_critic_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None, retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
@@ -48,6 +48,7 @@ def schema_critic_agent(checkpointer: Any, model:str = None, name:str = None, de
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
+        middleware=[ollama_retry_middleware(retries, retry_delay)] if retries > 0 else [],
         tools=[
             get_approved_user_goal, 
             get_approved_files,
