@@ -15,7 +15,9 @@ class AgentRequestDto(BaseModel):
     sysmsg:Optional[str] = Field(description="Instruction message for the agent", default=None)
     name:Optional[str] = Field(description="Agent Name. Pass 'default' for KGRAPH agents to use the default name", default=None)
     description:Optional[str] = Field(description="Agent Description (use it for agent purpose description). Pass 'default' for KGRAPH agents to use the default description", default=None)
-
+    retries:Optional[int] = Field(description="Tool call retries for ollama", default=0)
+    retry_delay=Optional[float] = Field(description="Ollama retry middleware initial_delay", default=0.5)
+    
 class KGAgentRequestDto(AgentRequestDto):
     comfy: bool = Field(description="Flag to indicate whether to trust the agent generated state variables in case of tool success or wait for user approval", default=False)
 

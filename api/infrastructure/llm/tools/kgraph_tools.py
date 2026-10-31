@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 
-from api.infrastructure.llm.agent_utils import DATA_DIR, PERCEIVED_USER_GOAL, SUGGESTED_FILES, PROPOSED_CONSTRUCTION_PLAN, ALL_AVAILABLE_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_FILES, APPROVED_USER_GOAL, NODE_CONSTRUCTION, RELATIONSHIP_CONSTRUCTION, SEARCH_RESULTS, StepKey, agent_config, state_update, tool_error, tool_success, update_state
+from api.infrastructure.llm.agent_utils import APPROVED_ENTITIES, APPROVED_FACTS, DATA_DIR, PERCEIVED_USER_GOAL, PROPOSED_ENTITIES, PROPOSED_FACTS, SUGGESTED_FILES, PROPOSED_CONSTRUCTION_PLAN, ALL_AVAILABLE_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_FILES, APPROVED_USER_GOAL, NODE_CONSTRUCTION, RELATIONSHIP_CONSTRUCTION, SEARCH_RESULTS, StepKey, agent_config, state_update, tool_error, tool_success, update_state
 
 
 
@@ -387,3 +387,83 @@ def approve_proposed_construction_plan(tool_runtime:ToolRuntime) -> Command | Di
         return tool_error("No proposed construction plan found. Propose a plan first.")
 
     return update_state(tool_runtime, APPROVED_CONSTRUCTION_PLAN, tool_runtime.state[PROPOSED_CONSTRUCTION_PLAN])
+
+@tool
+def set_proposed_entities(proposed_entity_types: list[str], tool_runtime:ToolRuntime) -> dict:
+    """Sets the list proposed entity types to extract from unstructured text."""
+    return update_state(PROPOSED_ENTITIES, proposed_entity_types)
+
+@tool
+def get_proposed_entities(tool_runtime:ToolRuntime) -> dict:
+    """Gets the list of proposed entity types to extract from unstructured text."""
+    return tool_runtime.state.get(PROPOSED_ENTITIES, [])
+
+@tool
+def approve_proposed_entities(tool_runtime:ToolRuntime) -> dict:
+    """Upon approval from user, records the proposed entity types as an approved list of entity types 
+
+    Only call this tool if the user has explicitly approved the suggested files.
+    """
+    if PROPOSED_ENTITIES not in tool_runtime.state:
+        return tool_error("No proposed entity types to approve. Please set proposed entities first, ask for user approval, then call this tool.")
+    return update_state(APPROVED_ENTITIES, tool_runtime.state.get(PROPOSED_ENTITIES))
+
+@tool
+def get_approved_entities(tool_runtime:ToolRuntime) -> dict:
+    """Get the approved list of entity types to extract from unstructured text."""
+    return tool_runtime.state.get(APPROVED_ENTITIES, [])
+
+@tool
+def get_well_known_types(tool_runtime:ToolRuntime) -> dict:
+    """Gets the approved labels that represent well-known entity types in the graph schema."""
+    construction_plan = tool_runtime.state.get(APPROVED_CONSTRUCTION_PLAN, {})
+    # approved labels are the keys for each construction plan entry where `construction_type` is "node"
+    approved_labels = {entry["label"] for entry in construction_plan.values() if entry["construction_type"] == "node"}
+    return update_state("approved_labels", approved_labels)
+
+@tool
+def add_proposed_fact(approved_subject_label:str,
+                      proposed_predicate_label:str,
+                      approved_object_label:str,
+                      tool_runtime:ToolRuntime) -> dict:
+    """Add a proposed type of fact that could be extracted from the files.
+
+    A proposed fact type is a tuple of (subject, predicate, object) where
+    the subject and object are approved entity types and the predicate 
+    is a proposed relationship label.
+
+    Args:
+      approved_subject_label: approved label of the subject entity type
+      proposed_predicate_label: label of the predicate
+      approved_object_label: approved label of the object entity type
+    """
+    # Guard against invalid labels
+    approved_entities = tool_runtime.state.get(APPROVED_ENTITIES, [])
+    
+    if approved_subject_label not in approved_entities:
+        return tool_error(f"Approved subject label {approved_subject_label} not found. Try again.")
+    if approved_object_label not in approved_entities:
+        return tool_error(f"Approved object label {approved_object_label} not found. Try again.")
+    
+    current_predicates = tool_runtime.state.get(PROPOSED_FACTS, {})
+    current_predicates[proposed_predicate_label] = {
+        "subject_label": approved_subject_label,
+        "predicate_label": proposed_predicate_label,
+        "object_label": approved_object_label
+    }
+    return update_state(PROPOSED_FACTS, current_predicates)
+
+@tool   
+def get_proposed_facts(tool_runtime:ToolRuntime) -> dict:
+    """Get the proposed types of facts that could be extracted from the files."""
+    return tool_runtime.state.get(PROPOSED_FACTS, {})
+
+@tool
+def approve_proposed_facts(tool_runtime:ToolRuntime) -> dict:
+    """Upon user approval, records the proposed fact types as approved fact types
+
+    Only call this tool if the user has explicitly approved the proposed fact types.
+    """
+    if PROPOSED_FACTS not in tool_runtime.state:
+        return tool_error("No proposed fact types to approve. Please set proposed facts first, ask for user approval, then call this tool.")
+    return tool_success(APPROVED_FACTS, tool_runtime.state.get(PROPOSED_FACTS))

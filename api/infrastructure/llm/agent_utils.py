@@ -24,6 +24,10 @@ PROPOSED_CONSTRUCTION_PLAN = "proposed_construction_plan"
 NODE_CONSTRUCTION = "node_construction"
 RELATIONSHIP_CONSTRUCTION = "relationship_construction"
 APPROVED_CONSTRUCTION_PLAN = "approved_construction_plan"
+PROPOSED_ENTITIES = "proposed_entity_types"
+APPROVED_ENTITIES = "approved_entity_types"
+PROPOSED_FACTS = "proposed_fact_types"
+APPROVED_FACTS = "approved_fact_types"
 
 FEEDBACK = "feedback"
 DATA_DIR = "./data"
@@ -105,6 +109,8 @@ class StepKey(StrEnum):
     PROPOSED_CONSTRUCTION_PLAN = "proposed_construction_plan"
     SCHEMA_CRITIC = "schema_critic"
     SCHEMA_REFINER = "schema_refiner"
+    PROPOSED_ENTITIES = "proposed_entity_types"
+    PROPOSED_FACTS = "proposed_fact_types"
 
 def step_response(name:str, response, approved:bool, thread_id:str):
     match name:
@@ -113,7 +119,7 @@ def step_response(name:str, response, approved:bool, thread_id:str):
                 return KGStepResponseDto(
                     thread_id=thread_id,
                     state_key=PERCEIVED_USER_GOAL,
-                    status="approved" if APPROVED_USER_GOAL in response else "needs_clarification",
+                    status="perceived_goal_approved" if APPROVED_USER_GOAL in response else "needs_clarification",
                     message=response["messages"][-1].content,
                     output_state={
                         PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
@@ -122,7 +128,7 @@ def step_response(name:str, response, approved:bool, thread_id:str):
             return KGStepResponseDto(
                 thread_id=thread_id,
                 state_key=PERCEIVED_USER_GOAL,
-                status="goal_perceived" if PERCEIVED_USER_GOAL in response else "needs_clarification",
+                status="perceived_goal_approved" if PERCEIVED_USER_GOAL in response else "needs_clarification",
                 message=response["messages"][-1].content,
                 output_state={
                     PERCEIVED_USER_GOAL: response.get(PERCEIVED_USER_GOAL),
@@ -132,7 +138,7 @@ def step_response(name:str, response, approved:bool, thread_id:str):
                 return KGStepResponseDto(
                     thread_id=thread_id,
                     state_key=SUGGESTED_FILES,
-                    status="files_selected" if APPROVED_FILES in response else "file_approval_failure",
+                    status="files_approved" if APPROVED_FILES in response else "file_approval_failure",
                     message=response["messages"][-1].content,
                     output_state={
                         APPROVED_FILES: response.get(APPROVED_FILES),
@@ -142,11 +148,68 @@ def step_response(name:str, response, approved:bool, thread_id:str):
             return KGStepResponseDto(
                 thread_id=thread_id,
                 state_key=SUGGESTED_FILES,
-                status="success" if SUGGESTED_FILES in response else "needs_clarification",
+                status="files_suggested" if SUGGESTED_FILES in response else "needs_clarification",
                 message=response["messages"][-1].content,
                 output_state={
                     SUGGESTED_FILES: response.get(SUGGESTED_FILES),
                     ALL_AVAILABLE_FILES: response.get(ALL_AVAILABLE_FILES),
+                })
+        case StepKey.PROPOSED_CONSTRUCTION_PLAN:
+            if approved:
+                return KGStepResponseDto(
+                    thread_id=thread_id,
+                    state_key=PROPOSED_CONSTRUCTION_PLAN,
+                    status="approved_graph_schema" if response.get(APPROVED_CONSTRUCTION_PLAN) else "graph_approval_error",
+                    message=response["messages"][-1].content,
+                    output_state={
+                        PROPOSED_CONSTRUCTION_PLAN: response.get(PROPOSED_CONSTRUCTION_PLAN),
+                        APPROVED_CONSTRUCTION_PLAN: response.get(APPROVED_CONSTRUCTION_PLAN)
+                    })
+            return KGStepResponseDto(
+                thread_id=thread_id,
+                state_key=PROPOSED_CONSTRUCTION_PLAN,
+                status="graph_schema_proposal" if response.get(PROPOSED_CONSTRUCTION_PLAN) else "graph_construction_error",
+                message=response["messages"][-1].content,
+                output_state={
+                    PROPOSED_CONSTRUCTION_PLAN: response.get(PROPOSED_CONSTRUCTION_PLAN)
+                })
+        case StepKey.PROPOSED_ENTITIES:
+            if approved:
+                return KGStepResponseDto(
+                    thread_id=thread_id,
+                    state_key=PROPOSED_ENTITIES,
+                    status="approved_ner_schema" if response.get(APPROVED_ENTITIES) else "ner_approval_error",
+                    message=response["messages"][-1].content,
+                    output_state={
+                        PROPOSED_ENTITIES: response.get(PROPOSED_ENTITIES),
+                        APPROVED_ENTITIES: response.get(APPROVED_ENTITIES)
+                    })
+            return KGStepResponseDto(
+                thread_id=thread_id,
+                state_key=PROPOSED_ENTITIES,
+                status="generated_ner_schema" if response.get(PROPOSED_ENTITIES) else "ner_schema_error",
+                message=response["messages"][-1].content,
+                output_state={
+                    PROPOSED_ENTITIES: response.get(PROPOSED_ENTITIES)
+                })
+        case StepKey.PROPOSED_FACTS:
+            if approved:
+                return KGStepResponseDto(
+                    thread_id=thread_id,
+                    state_key=PROPOSED_FACTS,
+                    status="approved_facts_schema" if response.get(APPROVED_FACTS) else "facts_approval_error",
+                    message=response["messages"][-1].content,
+                    output_state={
+                        PROPOSED_FACTS: response.get(PROPOSED_FACTS),
+                        APPROVED_FACTS: response.get(APPROVED_FACTS)
+                    })
+            return KGStepResponseDto(
+                thread_id=thread_id,
+                state_key=PROPOSED_FACTS,
+                status="generated_facts_schema" if response.get(PROPOSED_FACTS) else "facts_schema_error",
+                message=response["messages"][-1].content,
+                output_state={
+                    PROPOSED_FACTS: response.get(PROPOSED_FACTS)
                 })
             
 agent_preset_names = {
