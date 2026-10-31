@@ -3,7 +3,7 @@ import json
 from typing import Annotated, Any, Dict, List
 from fastapi import Request
 from langchain.agents import AgentState
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_neo4j import AsyncNeo4jSaver
 from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
@@ -12,7 +12,7 @@ from typing_extensions import NotRequired
 from api.models.kgraph_schemas import KGStepResponseDto
 from api.utils.helpers import HTTPLoggedException
 from enum import StrEnum
-from langchain.agents.middleware import ModelRetryMiddleware
+from langchain.agents.middleware import ModelRequest, ModelRetryMiddleware, wrap_model_call
 
 PERCEIVED_USER_GOAL = "perceived_user_goal"
 APPROVED_USER_GOAL = "approved_user_goal"
@@ -28,7 +28,10 @@ PROPOSED_ENTITIES = "proposed_entity_types"
 APPROVED_ENTITIES = "approved_entity_types"
 PROPOSED_FACTS = "proposed_fact_types"
 APPROVED_FACTS = "approved_fact_types"
-
+APPROVED_LABELS = "approved_labels"
+INSPECTED_NER_FILES = "inspected_ner_files"
+PATH_TO_INSPECTED_FOLDER = "path_to_inspected_folder"
+DATA_FOLDERS = "data_folders"
 FEEDBACK = "feedback"
 DATA_DIR = "./data"
 
@@ -50,6 +53,9 @@ class KGState(AgentState):
     approved_construction_plan: NotRequired[Dict[str, Any]]
     # schema critic output ('valid' or 'retry' + problems), read by the schema proposal agent prompt
     feedback: NotRequired[str]
+    inspected_ner_files: NotRequired[List[str]]
+    proposed_entity_types: NotRequired[List[str]]
+    approved_entity_types: NotRequired[List[str]]
 
 def dict_delta(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
     """Changes from `before` to `after` as a merge_dicts update: new/changed entries, and removed ones as None.
@@ -212,11 +218,6 @@ def step_response(name:str, response, approved:bool, thread_id:str):
                     PROPOSED_FACTS: response.get(PROPOSED_FACTS)
                 })
             
-agent_preset_names = {
-    PERCEIVED_USER_GOAL: "perceived_user_goal",
-    SUGGESTED_FILES:"suggested_files",
-    PROPOSED_CONSTRUCTION_PLAN: "proposed_construction_plan"
-}
         
 LIST_THREADS_QUERY = """
 MATCH (t:Thread {checkpoint_ns: ""})-[:HAS_CHECKPOINT]->(c:Checkpoint)
@@ -246,3 +247,18 @@ def ollama_retry_middleware(retries:int = 1, initial_delay:float=0.5):
     if initial_delay < 0:
         initial_delay = 0
     return ModelRetryMiddleware(max_retries=retries, retry_on=(ResponseError,), initial_delay=initial_delay)
+
+# name of the user messages that nudge an agent to finish its task: they continue the current request
+NUDGE_MESSAGE_NAME = "nudge"
+
+def nudge_message(content: str) -> Dict[str, str]:
+    return {"role": "user", "content": content, "name": NUDGE_MESSAGE_NAME}
+
+@wrap_model_call
+async def current_request_only(request: ModelRequest, handler):
+    """The model only gets the messages of the current request: the thread keeps the full history,
+    and the agent reads what it needs from previous steps through its tools (state keys).
+    Nudge messages don't start a new request, so the model keeps seeing the work it did before the nudge"""
+    last_human = max((i for i, m in enumerate(request.messages)
+                      if isinstance(m, HumanMessage) and m.name != NUDGE_MESSAGE_NAME), default=0)
+    return await handler(request.override(messages=request.messages[last_human:]))

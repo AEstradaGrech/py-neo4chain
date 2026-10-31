@@ -16,12 +16,12 @@ class AgentRequestDto(BaseModel):
     name:Optional[str] = Field(description="Agent Name. Pass 'default' for KGRAPH agents to use the default name", default=None)
     description:Optional[str] = Field(description="Agent Description (use it for agent purpose description). Pass 'default' for KGRAPH agents to use the default description", default=None)
     retries:Optional[int] = Field(description="Tool call retries for ollama", default=0)
-    retry_delay=Optional[float] = Field(description="Ollama retry middleware initial_delay", default=0.5)
-    
+    retry_delay:Optional[float] = Field(description="Ollama retry middleware initial_delay", default=0.5)
+
 class KGAgentRequestDto(AgentRequestDto):
     comfy: bool = Field(description="Flag to indicate whether to trust the agent generated state variables in case of tool success or wait for user approval", default=False)
 
-class KGSchemaRequestDto(AgentRequestDto):
+class KGSchemaRequestDto(KGAgentRequestDto):
     num_refinements: Optional[int] = Field(description="Num of iterations for the schema_critic_agent. None or 0 to get the raw output of the schema_proposal agent", default=None)
     
 

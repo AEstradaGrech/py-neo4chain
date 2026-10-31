@@ -4,7 +4,8 @@ import uuid
 from fastapi import APIRouter, Request
 from api.infrastructure.llm.agents_factory import AgentsFactory
 from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
-from api.infrastructure.llm.agent_utils import APPROVED_CONSTRUCTION_PLAN, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, StepKey, agent_config, get_agent_state, get_thread_values, step_response
+from api.infrastructure.llm.agent_utils import APPROVED_CONSTRUCTION_PLAN, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, PROPOSED_ENTITIES, StepKey, agent_config, get_agent_state, get_thread_values, nudge_message, step_response
+from api.infrastructure.llm.models.ner_agent import NER_NUDGE
 from api.infrastructure.llm.models.schema_critic_agent import schema_critic_agent
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE, schema_proposal_agent
 from api.infrastructure.llm.models.schema_refiner_agent import schema_refinement_loop
@@ -13,7 +14,7 @@ from api.models.kgraph_schemas import AgentRequestDto, KGAgentRequestDto, KGAppr
 from api.infrastructure.llm.models.user_intent_agent import user_intent_agent
 from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
 from api.utils.helpers import HTTPLoggedException, kgraph_intent_tracing
-from api.utils.statics import schema_proposal_max_nudges
+from api.utils.statics import ner_max_nudges, schema_proposal_max_nudges
 from api.mappers.prompting_mapper import to_openai_messages
 from loguru import logger
 
@@ -162,7 +163,7 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
             response = await schema_agent.ainvoke({"messages": [{"role": "user", "content": SCHEMA_PROPOSAL_NUDGE}]}, config=config)
     if req.comfy:
         approval_agent = factory.kg_agent_by_step_key(
-            step_key=StepKey.PROPOSED_CONSTRUCTION_PLAN, 
+            step_key=StepKey.SCHEMA_REFINER, 
             model=req.model, 
             checkpointer=request.app.state.neo4j_saver, 
             retries=req.retries, 
@@ -188,12 +189,12 @@ async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
     response = await schema_refiner.ainvoke({"messages": messages}, config=config)
     if req.comfy:
         response = await schema_refiner.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
-    return step_response(StepKey.PROPOSED_CONSTRUCTION_PLAN, response=response, approved=req.comfy)
+    return step_response(StepKey.PROPOSED_CONSTRUCTION_PLAN, thread_id=req.thread_id, response=response, approved=req.comfy)
     
 @router.post("/ner-schema")
 async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
     await validated_request_thread(req, request)
-    await check_thread_values(APPROVED_USER_GOAL, APPROVED_FILES, APPROVED_CONSTRUCTION_PLAN)
+    await check_thread_values(thread_id=req.thread_id, request=request, values=[APPROVED_USER_GOAL, APPROVED_FILES, APPROVED_CONSTRUCTION_PLAN])
     config = agent_config(req.thread_id, kgraph_intent_tracing())
     factory = AgentsFactory()
     agent = factory.kg_agent_by_step_key(
@@ -204,6 +205,13 @@ async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
         retry_delay=req.retry_delay)
     messages = [{"role": "user", "content": req.input}]
     response = await agent.ainvoke({"messages": messages}, config=config)
+    # gpt-oss:20b sometimes presents the entity types but doesn't save them: nudge it to finish in the same thread
+    # (nudge messages keep the current request context, see current_request_only)
+    nudges = 0
+    while not response.get(PROPOSED_ENTITIES) and nudges < ner_max_nudges:
+        nudges += 1
+        logger.warning(f"-- NER SCHEMA >> NO ENTITY TYPES SAVED, NUDGE {nudges}/{ner_max_nudges} --")
+        response = await agent.ainvoke({"messages": [nudge_message(NER_NUDGE)]}, config=config)
     if req.comfy:
         response = await agent.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
     return step_response(StepKey.PROPOSED_ENTITIES, response=response, thread_id=req.thread_id, approved=req.comfy)
@@ -211,7 +219,7 @@ async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
 @router.post("/facts-schema")
 async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
     await validated_request_thread(req, request)
-    await check_thread_values(APPROVED_USER_GOAL, APPROVED_FILES, APPROVED_CONSTRUCTION_PLAN)
+    await check_thread_values(thread_id=req.thread_id, request=request, values=[APPROVED_USER_GOAL, APPROVED_FILES, APPROVED_CONSTRUCTION_PLAN])
     config = agent_config(req.thread_id, kgraph_intent_tracing())
     factory = AgentsFactory()
     agent = factory.kg_agent_by_step_key(
@@ -238,5 +246,5 @@ async def check_thread_values(thread_id:str, values: List[str], request:Request)
     thread_values = await get_thread_values(request, thread_id)
     for value in values:
         if value not in thread_values:
-            raise HTTPLoggedException(status_code=409, detail=f"The thread state has no {value}.")
+            raise HTTPLoggedException(status_code=400, detail=f"The thread state has no {value}.")
     

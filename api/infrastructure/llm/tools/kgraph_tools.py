@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 
-from api.infrastructure.llm.agent_utils import APPROVED_ENTITIES, APPROVED_FACTS, DATA_DIR, PERCEIVED_USER_GOAL, PROPOSED_ENTITIES, PROPOSED_FACTS, SUGGESTED_FILES, PROPOSED_CONSTRUCTION_PLAN, ALL_AVAILABLE_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_FILES, APPROVED_USER_GOAL, NODE_CONSTRUCTION, RELATIONSHIP_CONSTRUCTION, SEARCH_RESULTS, StepKey, agent_config, state_update, tool_error, tool_success, update_state
+from api.infrastructure.llm.agent_utils import APPROVED_ENTITIES, APPROVED_FACTS, APPROVED_LABELS, DATA_DIR, DATA_FOLDERS, INSPECTED_NER_FILES, PERCEIVED_USER_GOAL, PROPOSED_ENTITIES, PROPOSED_FACTS, SUGGESTED_FILES, PROPOSED_CONSTRUCTION_PLAN, ALL_AVAILABLE_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_FILES, APPROVED_USER_GOAL, NODE_CONSTRUCTION, RELATIONSHIP_CONSTRUCTION, SEARCH_RESULTS, StepKey, agent_config, state_update, tool_error, tool_success, update_state
 
 
 
@@ -117,6 +117,29 @@ def list_available_files(tool_runtime: ToolRuntime) -> Command:
 
     # save the list to state so we can inspect it later
     return update_state(tool_runtime, ALL_AVAILABLE_FILES, file_names)
+
+@tool
+def list_folders() -> Dict[str, Any]:
+    """Lists the folders available to inspect, as paths relative to the import directory.
+    Use it to find the folder the user mentions: 'product_reviews' may be at 'dl_data/product_reviews'."""
+    import_dir = Path(DATA_DIR).resolve()
+    folders = sorted(p.relative_to(import_dir).as_posix() for p in import_dir.rglob("*") if p.is_dir())
+    return tool_success(DATA_FOLDERS, folders)
+
+@tool
+def list_folder_files(folder_path: str, tool_runtime:ToolRuntime) -> Dict[str, Any]:
+    """Lists the files of a folder (and its subfolders). The returned paths are relative to the import
+    directory, ready to use with the 'sample_file' and 'search_file' tools.
+
+    Args:
+        folder_path: folder path relative to the import directory, as returned by 'list_folders'
+    """
+    folder = resolve_import_folder(folder_path)
+    if isinstance(folder, dict):
+        return folder
+    import_dir = Path(DATA_DIR).resolve()
+    files = sorted(p.relative_to(import_dir).as_posix() for p in folder.rglob("*") if p.is_file())
+    return update_state(tool_runtime, INSPECTED_NER_FILES, files)
 
 # Tool: Set/Get suggested files
 @tool
@@ -232,6 +255,16 @@ def find_in_file(file_path: str, query: str) -> Dict[str, Any]:
     }
     return tool_success(SEARCH_RESULTS, result_data)
 
+def resolve_import_folder(folder_path: str) -> Path | Dict[str, Any]:
+    """Absolute path of a folder inside the import dir, or a tool_error.
+    folder_path comes from the LLM: don't let it list outside the import dir (e.g. '..')"""
+    import_dir = Path(DATA_DIR).resolve()
+    folder = (import_dir / folder_path).resolve()
+    if not folder.is_relative_to(import_dir):
+        return tool_error(f"Folder is outside the import directory: {folder_path}")
+    if not folder.is_dir():
+        return tool_error(f"Folder does not exist in import directory: {folder_path}. Use the 'list_folders' tool to find it.")
+    return folder
 @tool
 def propose_node_construction(approved_file: str, proposed_label: str, unique_column_name: str,
                               proposed_properties: list[str], tool_runtime: ToolRuntime) -> Command | Dict[str, Any]:
@@ -340,7 +373,7 @@ def remove_construction(key: str, construction_type: str, tool_runtime: ToolRunt
         return tool_error(f"'{key}' is a {construction_rule['construction_type']} construction, not a {construction_type} one. Use the right remove tool.")
 
     return state_update(tool_runtime, {PROPOSED_CONSTRUCTION_PLAN: {key: None}},
-                        tool_success(f"{construction_type}_construction_removed", key))
+        tool_success(f"{construction_type}_construction_removed", key))
 
 @tool
 def remove_node_construction(node_label: str, tool_runtime:ToolRuntime) -> Command | Dict[str, Any]:
@@ -391,22 +424,22 @@ def approve_proposed_construction_plan(tool_runtime:ToolRuntime) -> Command | Di
 @tool
 def set_proposed_entities(proposed_entity_types: list[str], tool_runtime:ToolRuntime) -> dict:
     """Sets the list proposed entity types to extract from unstructured text."""
-    return update_state(PROPOSED_ENTITIES, proposed_entity_types)
+    return update_state(tool_runtime, PROPOSED_ENTITIES, proposed_entity_types)
 
 @tool
-def get_proposed_entities(tool_runtime:ToolRuntime) -> dict:
+def get_proposed_entities(tool_runtime:ToolRuntime) -> Dict[str, Any]:
     """Gets the list of proposed entity types to extract from unstructured text."""
-    return tool_runtime.state.get(PROPOSED_ENTITIES, [])
+    return tool_success(PROPOSED_ENTITIES, tool_runtime.state.get(PROPOSED_ENTITIES, []))
 
 @tool
-def approve_proposed_entities(tool_runtime:ToolRuntime) -> dict:
-    """Upon approval from user, records the proposed entity types as an approved list of entity types 
+def approve_proposed_entities(tool_runtime:ToolRuntime) -> Command | Dict[str, Any]:
+    """Upon approval from user, records the proposed entity types as an approved list of entity types
 
-    Only call this tool if the user has explicitly approved the suggested files.
+    Only call this tool if the user has explicitly approved the proposed entity types.
     """
     if PROPOSED_ENTITIES not in tool_runtime.state:
         return tool_error("No proposed entity types to approve. Please set proposed entities first, ask for user approval, then call this tool.")
-    return update_state(APPROVED_ENTITIES, tool_runtime.state.get(PROPOSED_ENTITIES))
+    return update_state(tool_runtime,APPROVED_ENTITIES, tool_runtime.state.get(PROPOSED_ENTITIES))
 
 @tool
 def get_approved_entities(tool_runtime:ToolRuntime) -> dict:
@@ -414,12 +447,12 @@ def get_approved_entities(tool_runtime:ToolRuntime) -> dict:
     return tool_runtime.state.get(APPROVED_ENTITIES, [])
 
 @tool
-def get_well_known_types(tool_runtime:ToolRuntime) -> dict:
+def get_well_known_types(tool_runtime:ToolRuntime) -> Dict[str, Any]:
     """Gets the approved labels that represent well-known entity types in the graph schema."""
     construction_plan = tool_runtime.state.get(APPROVED_CONSTRUCTION_PLAN, {})
-    # approved labels are the keys for each construction plan entry where `construction_type` is "node"
-    approved_labels = {entry["label"] for entry in construction_plan.values() if entry["construction_type"] == "node"}
-    return update_state("approved_labels", approved_labels)
+    # approved labels: the label of every node construction (sorted list: a set isn't JSON serializable)
+    approved_labels = sorted({entry["label"] for entry in construction_plan.values() if entry["construction_type"] == "node"})
+    return tool_success(APPROVED_LABELS, approved_labels)
 
 @tool
 def add_proposed_fact(approved_subject_label:str,
@@ -451,7 +484,7 @@ def add_proposed_fact(approved_subject_label:str,
         "predicate_label": proposed_predicate_label,
         "object_label": approved_object_label
     }
-    return update_state(PROPOSED_FACTS, current_predicates)
+    return update_state(tool_runtime, PROPOSED_FACTS, current_predicates)
 
 @tool   
 def get_proposed_facts(tool_runtime:ToolRuntime) -> dict:
@@ -466,4 +499,4 @@ def approve_proposed_facts(tool_runtime:ToolRuntime) -> dict:
     """
     if PROPOSED_FACTS not in tool_runtime.state:
         return tool_error("No proposed fact types to approve. Please set proposed facts first, ask for user approval, then call this tool.")
-    return tool_success(APPROVED_FACTS, tool_runtime.state.get(PROPOSED_FACTS))
+    return update_state(tool_runtime,APPROVED_FACTS, tool_runtime.state.get(PROPOSED_FACTS))

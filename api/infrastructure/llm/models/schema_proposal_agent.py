@@ -1,6 +1,6 @@
 from typing import Any
 from api.infrastructure.llm.agent_utils import FEEDBACK, KGState, ollama_retry_middleware
-from api.infrastructure.llm.tools.kgraph_tools import get_approved_files, get_approved_user_goal, get_proposed_construction_plan, propose_node_construction, propose_relationship_construction, remove_node_construction, remove_relationship_construction, sample_file, search_file
+from api.infrastructure.llm.tools.kgraph_tools import approve_proposed_construction_plan, get_approved_files, get_approved_user_goal, get_proposed_construction_plan, propose_node_construction, propose_relationship_construction, remove_node_construction, remove_relationship_construction, sample_file, search_file
 from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, dynamic_prompt
@@ -106,7 +106,8 @@ def schema_proposal_agent(checkpointer: Any, model:str = None, name:str = None, 
             propose_node_construction, 
             propose_relationship_construction, 
             remove_node_construction, 
-            remove_relationship_construction
+            remove_relationship_construction,
+            approve_proposed_construction_plan
         ],
         system_prompt=uset_intent_instruction(description)
     )

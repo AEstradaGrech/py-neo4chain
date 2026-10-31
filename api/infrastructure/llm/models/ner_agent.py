@@ -1,13 +1,16 @@
 
 from typing import Any
 
-from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
-from api.infrastructure.llm.tools.kgraph_tools import approve_proposed_entities, get_approved_files, get_approved_user_goal, get_well_known_types, sample_file, set_proposed_entities
+from api.infrastructure.llm.agent_utils import KGState, current_request_only, ollama_retry_middleware
+from api.infrastructure.llm.tools.kgraph_tools import approve_proposed_entities, get_approved_files, get_approved_user_goal, get_proposed_entities, get_well_known_types, list_folder_files, list_folders, sample_file, set_proposed_entities
 from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
 
 DEFAULT_AGENT_NAME="ner_schema_agent" 
 DEFAULT_DESCRIPTION="Proposes the kind of named entities that could be extracted from text files."
+# sent when the agent finishes without saving entity types (gpt-oss:20b sometimes presents them but skips the tool)
+NER_NUDGE = """Continue with the task: save the entity types you proposed using the 'set_proposed_entities' tool,
+then present them to the user using the 'get_proposed_entities' tool."""
 
 ner_agent_role_and_goal = """
 # TASK:
@@ -39,19 +42,17 @@ ner_agent_hints = """
 """
 
 ner_agent_chain_of_thought_directions = """
-  Prepare for the task:
-  - use the 'get_user_goal' tool to get the user goal
-  - use the 'get_approved_files' tool to get the list of approved files
-  - use the 'get_well_known_types' tool to get the approved node labels
-
-  Think step by step:
-  1. Sample some of the files using the 'sample_file' tool to understand the content
-  2. Consider what well-known entities are mentioned in the text
-  3. Discover entities that are frequently mentioned in the text that support the user's goal
-  4. Use the 'set_proposed_entities' tool to save the list of well-known and discovered entity types
-  5. Use the 'get_proposed_entities' tool to retrieve the proposed entities and present them to the user for their approval
-  6. If the user approves, use the 'approve_proposed_entities' tool to finalize the entity types
-  7. If the user does not approve, consider their feedback and iterate on the proposal
+# RULES:
+  Follow these steps in order, using the tools. Don't answer the user until step 6 is done:
+  1. Use 'get_approved_user_goal' to get the user goal.
+  2. Use 'list_folders' to find the folder the user wants to use as data source to inspect.
+  3. Use 'list_folder_files' to get the files to analyze, and 'get_well_known_types' to get the node labels already in the graph.
+  4. Use 'sample_file' on EVERY inspected file. Take note of the people, places, things and qualities mentioned.
+  5. Decide the entity types: reuse the well-known types that appear in the text, and add the discovered types
+     that appear consistently and support the user goal (for example the kinds of problems customers complain about).
+  6. Save them with 'set_proposed_entities' (a list of type names), then use 'get_proposed_entities' and present them
+     to the user for approval.
+  7. Only if the user approves, use 'approve_proposed_entities'.
 """
 
 def ner_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,retries:int = 0, retry_delay:float =0.5):
@@ -64,12 +65,15 @@ def ner_agent(checkpointer: Any, model:str = None, name:str = None, description:
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
-        middleware=[ollama_retry_middleware(retries, retry_delay)] if retries > 0 else [],
+        # current_request_only: the shared thread history (previous pipeline steps) overflows the context window
+        middleware=[current_request_only] + ([ollama_retry_middleware(retries, retry_delay)] if retries > 0 else []),
         tools=[
             get_approved_user_goal, 
-            get_approved_files, 
+            list_folders,
+            list_folder_files, 
             sample_file,
             get_well_known_types,
+            get_proposed_entities,
             set_proposed_entities,
             approve_proposed_entities
         ],
