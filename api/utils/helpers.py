@@ -12,9 +12,15 @@ def ollama(model:str = None, temp:float = 0.7, max_tokens:int = 600, ctx_len:int
     logger.warning(f"-- OLLAMA INSTANCE FOR: {default_llm_model if model is None else model}")
     return ChatOllama(model=default_llm_model if model is None else model, temperature=temp, num_predict=max_tokens, num_ctx=ctx_len, verbose=verbose)
 
-def agent_chat_model(model: str = None, ctx_len: int = default_agent_numctx) -> ChatOllama:
+def agent_chat_model(model: str = None, temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx) -> ChatOllama:
     """Chat model for agents. 'ollama:<model>' strings use Ollama's default 4096 context: the prompt overflows it and the answer gets cut"""
-    return ChatOllama(model=default_llm_model if model is None else model, num_ctx=ctx_len)
+    return ChatOllama(
+        model=default_llm_model if model is None else model, 
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        num_predict=num_predict,
+        num_ctx=ctx_len)
 
 def ollama_embeddings(dimensions:int = None, model:str = None, num_ctx:int = None) -> OllamaEmbeddings:
     return  OllamaEmbeddings(

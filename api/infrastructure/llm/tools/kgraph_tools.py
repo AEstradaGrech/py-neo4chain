@@ -421,10 +421,21 @@ def approve_proposed_construction_plan(tool_runtime:ToolRuntime) -> Command | Di
 
     return update_state(tool_runtime, APPROVED_CONSTRUCTION_PLAN, tool_runtime.state[PROPOSED_CONSTRUCTION_PLAN])
 
+def well_known_labels(state: Dict[str, Any]) -> List[str]:
+    """Node labels of the approved construction plan: the entity types already in the graph
+    (sorted list: a set isn't JSON serializable)"""
+    construction_plan = state.get(APPROVED_CONSTRUCTION_PLAN, {})
+    return sorted({entry["label"] for entry in construction_plan.values() if entry["construction_type"] == "node"})
+
 @tool
-def set_proposed_entities(proposed_entity_types: list[str], tool_runtime:ToolRuntime) -> dict:
-    """Sets the list proposed entity types to extract from unstructured text."""
-    return update_state(tool_runtime, PROPOSED_ENTITIES, proposed_entity_types)
+def set_proposed_entities(proposed_entity_types: list[str], tool_runtime:ToolRuntime) -> Command:
+    """Sets the list of proposed entity types to extract from unstructured text.
+    The well-known entity types (node labels of the approved construction plan) are always included."""
+    well_known = well_known_labels(tool_runtime.state)
+    # the LLM may skip them or change their case: text entities must reuse the graph labels to connect to it
+    known = {label.lower() for label in well_known}
+    discovered = [entity_type for entity_type in proposed_entity_types if entity_type.lower() not in known]
+    return update_state(tool_runtime, PROPOSED_ENTITIES, well_known + discovered)
 
 @tool
 def get_proposed_entities(tool_runtime:ToolRuntime) -> Dict[str, Any]:
@@ -442,23 +453,30 @@ def approve_proposed_entities(tool_runtime:ToolRuntime) -> Command | Dict[str, A
     return update_state(tool_runtime,APPROVED_ENTITIES, tool_runtime.state.get(PROPOSED_ENTITIES))
 
 @tool
-def get_approved_entities(tool_runtime:ToolRuntime) -> dict:
+def get_approved_entities(tool_runtime:ToolRuntime) -> Dict[str, Any]:
     """Get the approved list of entity types to extract from unstructured text."""
-    return tool_runtime.state.get(APPROVED_ENTITIES, [])
+    if APPROVED_ENTITIES not in tool_runtime.state:
+        return tool_error("No approved entity types found. The entity types must be proposed and approved first.")
+    return tool_success(APPROVED_ENTITIES, tool_runtime.state[APPROVED_ENTITIES])
+
+@tool
+def get_inspected_files(tool_runtime:ToolRuntime) -> Dict[str, Any]:
+    """Get the unstructured text files inspected to propose the entity types.
+    The paths are relative to the import directory, ready to use with the 'sample_file' tool."""
+    if not tool_runtime.state.get(INSPECTED_NER_FILES):
+        return tool_error("No inspected files found. The entity types must be proposed from a folder of text files first.")
+    return tool_success(INSPECTED_NER_FILES, tool_runtime.state[INSPECTED_NER_FILES])
 
 @tool
 def get_well_known_types(tool_runtime:ToolRuntime) -> Dict[str, Any]:
     """Gets the approved labels that represent well-known entity types in the graph schema."""
-    construction_plan = tool_runtime.state.get(APPROVED_CONSTRUCTION_PLAN, {})
-    # approved labels: the label of every node construction (sorted list: a set isn't JSON serializable)
-    approved_labels = sorted({entry["label"] for entry in construction_plan.values() if entry["construction_type"] == "node"})
-    return tool_success(APPROVED_LABELS, approved_labels)
+    return tool_success(APPROVED_LABELS, well_known_labels(tool_runtime.state))
 
 @tool
 def add_proposed_fact(approved_subject_label:str,
                       proposed_predicate_label:str,
                       approved_object_label:str,
-                      tool_runtime:ToolRuntime) -> dict:
+                      tool_runtime:ToolRuntime) -> Command | Dict[str, Any]:
     """Add a proposed type of fact that could be extracted from the files.
 
     A proposed fact type is a tuple of (subject, predicate, object) where
@@ -478,25 +496,26 @@ def add_proposed_fact(approved_subject_label:str,
     if approved_object_label not in approved_entities:
         return tool_error(f"Approved object label {approved_object_label} not found. Try again.")
     
-    current_predicates = tool_runtime.state.get(PROPOSED_FACTS, {})
-    current_predicates[proposed_predicate_label] = {
+    fact_type = {
         "subject_label": approved_subject_label,
         "predicate_label": proposed_predicate_label,
         "object_label": approved_object_label
     }
-    return update_state(tool_runtime, PROPOSED_FACTS, current_predicates)
-
-@tool   
-def get_proposed_facts(tool_runtime:ToolRuntime) -> dict:
-    """Get the proposed types of facts that could be extracted from the files."""
-    return tool_runtime.state.get(PROPOSED_FACTS, {})
+    # only the new entry: the merge_dicts reducer adds it to the proposed facts (also with parallel tool calls)
+    return state_update(tool_runtime, {PROPOSED_FACTS: {proposed_predicate_label: fact_type}},
+                        tool_success("proposed_fact_type", fact_type))
 
 @tool
-def approve_proposed_facts(tool_runtime:ToolRuntime) -> dict:
+def get_proposed_facts(tool_runtime:ToolRuntime) -> Dict[str, Any]:
+    """Get the proposed types of facts that could be extracted from the files."""
+    return tool_success(PROPOSED_FACTS, tool_runtime.state.get(PROPOSED_FACTS, {}))
+
+@tool
+def approve_proposed_facts(tool_runtime:ToolRuntime) -> Command | Dict[str, Any]:
     """Upon user approval, records the proposed fact types as approved fact types
 
     Only call this tool if the user has explicitly approved the proposed fact types.
     """
-    if PROPOSED_FACTS not in tool_runtime.state:
-        return tool_error("No proposed fact types to approve. Please set proposed facts first, ask for user approval, then call this tool.")
-    return update_state(tool_runtime,APPROVED_FACTS, tool_runtime.state.get(PROPOSED_FACTS))
+    if not tool_runtime.state.get(PROPOSED_FACTS):
+        return tool_error("No proposed fact types to approve. Please propose facts first, ask for user approval, then call this tool.")
+    return update_state(tool_runtime, APPROVED_FACTS, tool_runtime.state[PROPOSED_FACTS])

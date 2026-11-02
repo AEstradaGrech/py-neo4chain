@@ -5,7 +5,7 @@ from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
 from api.utils.helpers import agent_chat_model
 from langchain.agents import create_agent
 from api.infrastructure.llm.tools.kgraph_tools import approve_perceived_user_goal, set_perceived_user_goal
-
+from api.utils.statics import default_agent_numctx
 DEFAULT_AGENT_NAME = "user_intent_analyzer_agent"
 DEFAULT_DESCRIPTION = "Helps the user ideate on a knowledge graph use case."
 
@@ -41,13 +41,13 @@ Think carefully and collaborate with the user:
 5. If the user agrees, use the 'approve_perceived_user_goal' tool to approve the user goal. This will save the goal in state under the 'approved_user_goal' key.
 """
 
-def user_intent_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,retries:int = 0, retry_delay:float =0.5):
+def user_intent_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx, retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
         description = DEFAULT_DESCRIPTION
     return create_agent(
-        model=agent_chat_model(model),
+        model=agent_chat_model(model, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len),
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,

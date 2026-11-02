@@ -4,6 +4,7 @@ from typing import Any
 from api.infrastructure.llm.agent_utils import KGState, current_request_only, ollama_retry_middleware
 from api.infrastructure.llm.tools.kgraph_tools import approve_proposed_entities, get_approved_files, get_approved_user_goal, get_proposed_entities, get_well_known_types, list_folder_files, list_folders, sample_file, set_proposed_entities
 from api.utils.helpers import agent_chat_model
+from api.utils.statics import default_agent_numctx
 from langchain.agents import create_agent
 
 DEFAULT_AGENT_NAME="ner_schema_agent" 
@@ -39,6 +40,10 @@ ner_agent_hints = """
   - for example, if the user goal is to represent social communities and the graph has "Person" nodes, look through the text to discover entities that are relevant like "Hobby" or "Event"
   - avoid quantitative types that may be better represented as a property on an existing entity or relationship.
   - for example, do not propose "Age" as a type of entity. That is better represented as an additional property "age" on a "Person".
+  - prefer a few general entity types over many specific ones: if several candidate types are variants of the same thing
+    (for example "AssemblyIssue", "HardwareIssue", "MaterialIssue"), propose one general type ("Issue") and keep the
+    variant as a property (an "Issue" with a "category" property)
+  - include the people who wrote the text when they are relevant to the user's goal (for example, the reviewer of a product review)
 """
 
 ner_agent_chain_of_thought_directions = """
@@ -49,19 +54,20 @@ ner_agent_chain_of_thought_directions = """
   3. Use 'list_folder_files' to get the files to analyze, and 'get_well_known_types' to get the node labels already in the graph.
   4. Use 'sample_file' on EVERY inspected file. Take note of the people, places, things and qualities mentioned.
   5. Decide the entity types: reuse the well-known types that appear in the text, and add the discovered types
-     that appear consistently and support the user goal (for example the kinds of problems customers complain about).
+     that appear consistently and support the user goal, following the design rules for discovered entities
+     (for example, one general type for the problems customers complain about).
   6. Save them with 'set_proposed_entities' (a list of type names), then use 'get_proposed_entities' and present them
      to the user for approval.
   7. Only if the user approves, use 'approve_proposed_entities'.
 """
 
-def ner_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,retries:int = 0, retry_delay:float =0.5):
+def ner_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx, retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
         description = DEFAULT_DESCRIPTION
     return create_agent(
-        model=agent_chat_model(model),
+        model=agent_chat_model(model, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len),
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,

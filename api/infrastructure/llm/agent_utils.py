@@ -56,6 +56,9 @@ class KGState(AgentState):
     inspected_ner_files: NotRequired[List[str]]
     proposed_entity_types: NotRequired[List[str]]
     approved_entity_types: NotRequired[List[str]]
+    # merge_dicts reducer: add_proposed_fact writes only the fact it adds (the LLM proposes several facts in parallel)
+    proposed_fact_types: NotRequired[Annotated[Dict[str, Any], merge_dicts]]
+    approved_fact_types: NotRequired[Dict[str, Any]]
 
 def dict_delta(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
     """Changes from `before` to `after` as a merge_dicts update: new/changed entries, and removed ones as None.

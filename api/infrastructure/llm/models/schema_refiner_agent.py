@@ -21,7 +21,7 @@ from api.infrastructure.llm.models.schema_critic_agent import schema_critic_agen
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE, schema_proposal_agent
 from api.infrastructure.llm.tools.kgraph_tools import  approve_proposed_construction_plan, get_proposed_construction_plan
 from api.utils.helpers import agent_chat_model
-from api.utils.statics import schema_proposal_max_nudges
+from api.utils.statics import schema_proposal_max_nudges, default_agent_numctx
 
 DEFAULT_AGENT_NAME = "schema_refiner_agent"
 DEFAULT_DESCRIPTION = "Generates an enhanced version of the the proposed knowledge graph construction schema"
@@ -93,14 +93,14 @@ schema_proposal_coordinator_instruction = """
     3. If the user disapproves, call 'refine_proposed_plan' again and present the new plan.
     4. If the user approves, use the 'approve_proposed_construction_plan' tool to record the approval.
 """
-def schema_refiner_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,retries:int = 0, retry_delay:float =0.5):
+def schema_refiner_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None,temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx,retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
         description = DEFAULT_DESCRIPTION
     logger.warning(f"-- REFINER AGENT INSTRUCTION >> \n\n{refiner_agent_instruction(description)}")
     return create_agent(
-        model=agent_chat_model(model),
+        model=agent_chat_model(model, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len),
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
@@ -127,8 +127,8 @@ async def refine_proposed_plan(tool_runtime: ToolRuntime) -> Command:
     logger.warning("-- REFINE PROPOSED PLAN TOOL CALL --")
     # 2 iterations: propose -> critique -> propose again applying the feedback (with 1 the critique is never applied)
     schema_refiner = schema_refinement_loop(
-            proposal_agent=schema_proposal_agent(name="default", description="default", checkpointer=None),
-            critic_agent=schema_critic_agent(name="default", description="default", checkpointer=None),
+            proposal_agent=schema_proposal_agent(name="default", description="default", checkpointer=None, retries=1),
+            critic_agent=schema_critic_agent(name="default", description="default", checkpointer=None,retries=1),
             max_iterations=DEFAULT_MAX_ITERATIONS
         )
     nudges = 0

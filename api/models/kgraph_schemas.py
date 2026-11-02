@@ -15,6 +15,10 @@ class AgentRequestDto(BaseModel):
     sysmsg:Optional[str] = Field(description="Instruction message for the agent", default=None)
     name:Optional[str] = Field(description="Agent Name. Pass 'default' for KGRAPH agents to use the default name", default=None)
     description:Optional[str] = Field(description="Agent Description (use it for agent purpose description). Pass 'default' for KGRAPH agents to use the default description", default=None)
+    temperature:Optional[float] = Field(description="Controls LLM creativity", default=0.7)
+    top_p:Optional[float] = Field(description="Controls the top P tokens considered for the output", default=0.9)
+    top_k:Optional[int] = Field(description="Controls the top K tokens considered for the output", default=40)
+    max_tokens:Optional[int] = Field(description="Maximum tokens for the LLM response. -1 = infinite generation, -2 = fill ctx,", default=-2)
     retries:Optional[int] = Field(description="Tool call retries for ollama", default=0)
     retry_delay:Optional[float] = Field(description="Ollama retry middleware initial_delay", default=0.5)
 

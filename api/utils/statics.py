@@ -5,6 +5,8 @@ default_agent_numctx = 16384
 schema_proposal_max_nudges = 2
 # times /ner-schema nudges the NER agent when it finishes without saving the proposed entity types
 ner_max_nudges = 2
+# times /facts-schema nudges the facts agent when it finishes without recording any fact type
+facts_max_nudges = 2
 default_embedding_model = "nomic-embed-text"
 default_embedding_dimensions = 512
 default_embedding_numctx = 1536

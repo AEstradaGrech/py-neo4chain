@@ -4,8 +4,9 @@ import uuid
 from fastapi import APIRouter, Request
 from api.infrastructure.llm.agents_factory import AgentsFactory
 from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
-from api.infrastructure.llm.agent_utils import APPROVED_CONSTRUCTION_PLAN, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, LIST_THREADS_QUERY, PROPOSED_ENTITIES, StepKey, agent_config, get_agent_state, get_thread_values, nudge_message, step_response
+from api.infrastructure.llm.agent_utils import APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, APPROVED_FACTS, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, INSPECTED_NER_FILES, LIST_THREADS_QUERY, PROPOSED_ENTITIES, PROPOSED_FACTS, StepKey, agent_config, get_agent_state, get_thread_values, nudge_message, step_response
 from api.infrastructure.llm.models.ner_agent import NER_NUDGE
+from api.infrastructure.llm.models.facts_agent import FACTS_NUDGE
 from api.infrastructure.llm.models.schema_critic_agent import schema_critic_agent
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE, schema_proposal_agent
 from api.infrastructure.llm.models.schema_refiner_agent import schema_refinement_loop
@@ -14,7 +15,7 @@ from api.models.kgraph_schemas import AgentRequestDto, KGAgentRequestDto, KGAppr
 from api.infrastructure.llm.models.user_intent_agent import user_intent_agent
 from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
 from api.utils.helpers import HTTPLoggedException, kgraph_intent_tracing
-from api.utils.statics import ner_max_nudges, schema_proposal_max_nudges
+from api.utils.statics import facts_max_nudges, ner_max_nudges, schema_proposal_max_nudges
 from api.mappers.prompting_mapper import to_openai_messages
 from loguru import logger
 
@@ -77,6 +78,10 @@ async def user_intent(req: KGAgentRequestDto, request: Request) -> Any:
         step_key=StepKey.PERCEIVED_USER_GOAL, 
         model=req.model, 
         checkpointer=request.app.state.neo4j_saver, 
+        temperature=req.temperature,
+        top_p=req.top_p,
+        top_k=req.top_k,
+        num_predict=req.max_tokens,
         retries=req.retries, 
         retry_delay=req.retry_delay)
     config = agent_config(thread_id, kgraph_intent_tracing())
@@ -86,7 +91,7 @@ async def user_intent(req: KGAgentRequestDto, request: Request) -> Any:
     if PERCEIVED_USER_GOAL not in response: 
         #the LLM may have asked a clarifying question. offer some more details
         return KGStepResponseDto(
-            thread_id=req.thread_id,
+            thread_id=thread_id,  # req.thread_id is None on a new thread: the client needs the generated one to answer
             state_key=PERCEIVED_USER_GOAL,
             status="needs_clarification",
             message=response["messages"][-1].content)     
@@ -107,6 +112,10 @@ async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
         step_key=StepKey.SUGGESTED_FILES, 
         model=req.model, 
         checkpointer=request.app.state.neo4j_saver,
+        temperature=req.temperature,
+        top_p=req.top_p,
+        top_k=req.top_k,
+        num_predict=req.max_tokens,
         retries=req.retries,
         retry_delay=req.retry_delay)
     #thread_state = await get_agent_state(agent, thread_id=req.thread_id)
@@ -151,7 +160,11 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
         schema_agent = factory.kg_agent_by_step_key(
             step_key=StepKey.PROPOSED_CONSTRUCTION_PLAN,
             model=req.model, 
-            checkpointer=request.app.state.neo4j_saver, 
+            checkpointer=request.app.state.neo4j_saver,
+            temperature=req.temperature,
+            top_p=req.top_p,
+            top_k=req.top_k,
+            num_predict=req.max_tokens, 
             retries=req.retries, 
             retry_delay=req.retry_delay)
         logger.warning(f"-- PROPOSE SCHEMA >> USER INPUT: {req.input} --")
@@ -165,7 +178,11 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
         approval_agent = factory.kg_agent_by_step_key(
             step_key=StepKey.SCHEMA_REFINER, 
             model=req.model, 
-            checkpointer=request.app.state.neo4j_saver, 
+            checkpointer=request.app.state.neo4j_saver,
+            temperature=req.temperature,
+            top_p=req.top_p,
+            top_k=req.top_k,
+            num_predict=req.max_tokens, 
             retries=req.retries, 
             retry_delay=req.retry_delay)
         response = await approval_agent.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
@@ -183,13 +200,17 @@ async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
         step_key=StepKey.SCHEMA_REFINER, 
         model=req.model,
         checkpointer=request.app.state.neo4j_saver, 
+        temperature=req.temperature,
+        top_p=req.top_p,
+        top_k=req.top_k,
+        num_predict=req.max_tokens,
         retries=req.retries, 
         retry_delay=req.retry_delay)
     messages = [{"role": "user", "content": req.input}]
     response = await schema_refiner.ainvoke({"messages": messages}, config=config)
     if req.comfy:
         response = await schema_refiner.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
-    return step_response(StepKey.PROPOSED_CONSTRUCTION_PLAN, thread_id=req.thread_id, response=response, approved=req.comfy)
+    return step_response(StepKey.PROPOSED_CONSTRUCTION_PLAN, thread_id=req.thread_id, response=response, approved=True if APPROVED_CONSTRUCTION_PLAN in response.get(APPROVED_CONSTRUCTION_PLAN,{}) else False)
     
 @router.post("/ner-schema")
 async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
@@ -201,6 +222,10 @@ async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
         step_key=StepKey.PROPOSED_ENTITIES, 
         model=req.model,
         checkpointer=request.app.state.neo4j_saver, 
+        temperature=req.temperature,
+        top_p=req.top_p,
+        top_k=req.top_k,
+        num_predict=req.max_tokens,
         retries=req.retries,
         retry_delay=req.retry_delay)
     messages = [{"role": "user", "content": req.input}]
@@ -212,27 +237,49 @@ async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
         nudges += 1
         logger.warning(f"-- NER SCHEMA >> NO ENTITY TYPES SAVED, NUDGE {nudges}/{ner_max_nudges} --")
         response = await agent.ainvoke({"messages": [nudge_message(NER_NUDGE)]}, config=config)
-    if req.comfy:
-        response = await agent.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
-    return step_response(StepKey.PROPOSED_ENTITIES, response=response, thread_id=req.thread_id, approved=req.comfy)
+    if req.comfy and response.get(PROPOSED_ENTITIES):
+        response = await approve_in_state(agent, config, PROPOSED_ENTITIES, APPROVED_ENTITIES)
+    return step_response(StepKey.PROPOSED_ENTITIES, response=response, thread_id=req.thread_id, approved=True if APPROVED_ENTITIES in response.get(APPROVED_ENTITIES, {}) else False)
 
 @router.post("/facts-schema")
 async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
     await validated_request_thread(req, request)
-    await check_thread_values(thread_id=req.thread_id, request=request, values=[APPROVED_USER_GOAL, APPROVED_FILES, APPROVED_CONSTRUCTION_PLAN])
+    # facts relate the approved entity types, found in the text files inspected by the NER step
+    await check_thread_values(thread_id=req.thread_id, request=request,
+                              values=[APPROVED_USER_GOAL, APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, INSPECTED_NER_FILES])
     config = agent_config(req.thread_id, kgraph_intent_tracing())
     factory = AgentsFactory()
     agent = factory.kg_agent_by_step_key(
-        step_key=StepKey.PROPOSED_FACTS, 
+        step_key=StepKey.PROPOSED_FACTS,
         model=req.model,
-        checkpointer=request.app.state.neo4j_saver, 
+        checkpointer=request.app.state.neo4j_saver,
+        temperature=req.temperature,
+        top_p=req.top_p,
+        top_k=req.top_k,
+        num_predict=req.max_tokens,
         retries=req.retries,
         retry_delay=req.retry_delay)
     messages = [{"role": "user", "content": req.input}]
     response = await agent.ainvoke({"messages": messages}, config=config)
-    if req.comfy:
-        response = await agent.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
-    return step_response(StepKey.PROPOSED_FACTS, response=response, thread_id=req.thread_id, approved=req.comfy)
+    # gpt-oss:20b sometimes presents the fact types but doesn't record them: nudge it to finish in the same thread
+    # (nudge messages keep the current request context, see current_request_only)
+    nudges = 0
+    while not response.get(PROPOSED_FACTS) and nudges < facts_max_nudges:
+        nudges += 1
+        logger.warning(f"-- FACTS SCHEMA >> NO FACT TYPES RECORDED, NUDGE {nudges}/{facts_max_nudges} --")
+        response = await agent.ainvoke({"messages": [nudge_message(FACTS_NUDGE)]}, config=config)
+    if req.comfy and response.get(PROPOSED_FACTS):
+        response = await approve_in_state(agent, config, PROPOSED_FACTS, APPROVED_FACTS)
+    return step_response(StepKey.PROPOSED_FACTS, response=response, thread_id=req.thread_id, approved=True if APPROVED_FACTS in response.get(APPROVED_FACTS,{}) else False)
+    
+
+async def approve_in_state(agent: Any, config: Dict[str, Any], proposed_key: str, approved_key: str) -> Dict[str, Any]:
+    """comfy approval in code: copies the proposal to its approved key and returns the updated state.
+    Agents with current_request_only take an 'Ok, approved' message as a new request: they don't see their
+    proposal, so instead of approving it they start the task again (and overwrite it)"""
+    state = (await agent.aget_state(config)).values
+    await agent.aupdate_state(config, {approved_key: state[proposed_key]})
+    return (await agent.aget_state(config)).values
 
 async def validated_request_thread(req: AgentRequestDto, request:Request) -> Any:
     if req.thread_id is None or req.thread_id == "":

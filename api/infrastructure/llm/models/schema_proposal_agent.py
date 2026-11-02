@@ -2,6 +2,7 @@ from typing import Any
 from api.infrastructure.llm.agent_utils import FEEDBACK, KGState, ollama_retry_middleware
 from api.infrastructure.llm.tools.kgraph_tools import approve_proposed_construction_plan, get_approved_files, get_approved_user_goal, get_proposed_construction_plan, propose_node_construction, propose_relationship_construction, remove_node_construction, remove_relationship_construction, sample_file, search_file
 from api.utils.helpers import agent_chat_model
+from api.utils.statics import default_agent_numctx
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, dynamic_prompt
 
@@ -86,13 +87,13 @@ def feedback_prompt(request: ModelRequest) -> str:
     ADK templates instructions from state automatically; in LangChain system_prompt is plain text"""
     return request.system_prompt.replace("{feedback}", request.state.get(FEEDBACK) or "No feedback yet.")
 
-def schema_proposal_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None, retries:int = 0, retry_delay:float =0.5):
+def schema_proposal_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None, temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx, retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
         description = DEFAULT_DESCRIPTION
     return create_agent(
-        model=agent_chat_model(model),
+        model=agent_chat_model(model, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len),
         name=name,
         state_schema=KGState,
         middleware=[feedback_prompt, ollama_retry_middleware(retries, retry_delay)] if retries > 0 else [feedback_prompt],

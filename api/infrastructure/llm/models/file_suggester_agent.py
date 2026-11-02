@@ -3,6 +3,7 @@ from typing import Any
 from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
 from api.infrastructure.llm.tools.kgraph_tools import approve_suggested_files, get_approved_user_goal, get_suggested_files, list_available_files, sample_file, set_suggested_files
 from api.utils.helpers import agent_chat_model
+from api.utils.statics import default_agent_numctx
 from langchain.agents import create_agent
 
 DEFAULT_AGENT_NAME = "file_suggester_agent"
@@ -34,13 +35,13 @@ Think carefully, repeating these steps until finished:
 6. If approved, use the 'approve_suggested_files' tool to record the approval
 """
 
-def file_suggester_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None, retries:int = 0, retry_delay:float =0.5):
+def file_suggester_agent(checkpointer: Any, model:str = None, name:str = None, description:str = None, temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx, retries:int = 0, retry_delay:float =0.5):
     if name is not None and name.lower() == "default":
         name = DEFAULT_AGENT_NAME
     if description is not None and description.lower() == "default":
         description = DEFAULT_DESCRIPTION
     return create_agent(
-        model=agent_chat_model(model),
+        model=agent_chat_model(model, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len),
         name=name,
         state_schema=KGState,
         checkpointer=checkpointer,
