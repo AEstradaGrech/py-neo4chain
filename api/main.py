@@ -17,16 +17,25 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with AsyncGraphDatabase.driver(
+    async with (
+        AsyncGraphDatabase.driver(
         os.environ["NEO_URI"],
         auth=(os.environ["NEO_USERNAME"], os.environ["NEO_PASS"]),
         notifications_min_severity="OFF",  # hides the 'label/property does not exist' warnings
-    ) as driver:
+    ) as driver,
+        AsyncGraphDatabase.driver(
+            os.environ["NEODB_URI"],
+            auth=(os.environ["NEODB_USERNAME"], os.environ["NEODB_PASS"]),
+        ) as kg_driver,
+    ):
         saver = AsyncNeo4jSaver(driver)
         await saver.setup()   # constraints and indexes, idempotent
+        await kg_driver.verify_connectivity()
         app.state.neo4j_driver = driver
         app.state.neo4j_saver = saver
+        app.state.neodb_driver = kg_driver
         yield
+    
     # Langfuse exports traces in background batches: flush the pending ones before the process exits
     get_client().shutdown()
 

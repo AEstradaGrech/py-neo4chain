@@ -49,6 +49,13 @@ services:
       neo4j-seed:
         condition: service_completed_successfully
         required: false
+    healthcheck:
+      # healthy when the server accepts Cypher queries, not just when the container is up
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4jpassword 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     ports:
       - 7474:7474
       - 7687:7687
@@ -64,6 +71,29 @@ services:
       - neo4j-data:/data
       - ./data:/import
       - ./neo4j-logs:/logs
+  neo4j-db:
+    image: neo4j:2026.08.1
+    user: neo4j
+    container_name: neo-db
+    depends_on:
+      # waits for the neo4j db healthcheck
+      neo4j:
+        condition: service_healthy
+    ports:
+      - 7567:7687
+    environment:
+      # initial password, only applied when the volume is new (after 'down -v')
+      - NEO4J_AUTH=neo4j/neo4jpassword
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_server_directories_import=/import
+      - NEO4J_PLUGINS=["apoc", "graph-data-science", "genai"]
+    volumes:
+      - neo4jdb-data:/data
+      - ./data:/import
+      - ./neo4jdb-logs:/logs
 
 volumes:
   neo4j-data:
+  neo4jdb-data:
