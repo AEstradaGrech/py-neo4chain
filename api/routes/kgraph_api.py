@@ -61,6 +61,8 @@ async def approve_step(req: KGApproveRequestDto, request: Request) -> Any:
     factory = AgentsFactory()
     #check KEY exists
     agent = factory.kg_agent_by_step_key(step_key=req.state_key, model=req.model, checkpointer=request.app.state.neo4j_saver)
+    if agent is None:
+        raise HTTPLoggedException(status_code=400, detail=f"No agent has been found for key: {req.state_key}")
     state = await get_agent_state(agent, req.thread_id)
     if req.state_key not in state:
         raise HTTPLoggedException(status_code=400, detail="The step to approve is not present in the agent state")
@@ -153,7 +155,9 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
         # (goal, files and plan are read from the thread)
         schema_refiner = factory.kg_schema_refining_loop(
             checkpointer=request.app.state.neo4j_saver,
-            max_iterations=req.num_refinements
+            max_iterations=req.num_refinements,
+            retries=req.retries,
+            retry_delay=req.retry_delay
         )
         response = await schema_refiner.ainvoke({"messages": []}, config=config)
     else:
@@ -187,7 +191,7 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
             retry_delay=req.retry_delay)
         response = await approval_agent.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
     
-    return step_response(StepKey.PROPOSED_CONSTRUCTION_PLAN, response=response, approved=req.comfy)
+    return step_response(thread_id=req.thread_id, name=StepKey.PROPOSED_CONSTRUCTION_PLAN, response=response, approved=req.comfy)
 
 
 @router.post("/refined-schema")
@@ -210,7 +214,7 @@ async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
     response = await schema_refiner.ainvoke({"messages": messages}, config=config)
     if req.comfy:
         response = await schema_refiner.ainvoke({"messages": [{"role": "user", "content": "Ok, approved"}]}, config=config)
-    return step_response(StepKey.PROPOSED_CONSTRUCTION_PLAN, thread_id=req.thread_id, response=response, approved=True if APPROVED_CONSTRUCTION_PLAN in response.get(APPROVED_CONSTRUCTION_PLAN,{}) else False)
+    return step_response(StepKey.PROPOSED_CONSTRUCTION_PLAN, thread_id=req.thread_id, response=response, approved=True if APPROVED_CONSTRUCTION_PLAN in response else False)
     
 @router.post("/ner-schema")
 async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
@@ -239,7 +243,7 @@ async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
         response = await agent.ainvoke({"messages": [nudge_message(NER_NUDGE)]}, config=config)
     if req.comfy and response.get(PROPOSED_ENTITIES):
         response = await approve_in_state(agent, config, PROPOSED_ENTITIES, APPROVED_ENTITIES)
-    return step_response(StepKey.PROPOSED_ENTITIES, response=response, thread_id=req.thread_id, approved=True if APPROVED_ENTITIES in response.get(APPROVED_ENTITIES, {}) else False)
+    return step_response(StepKey.PROPOSED_ENTITIES, response=response, thread_id=req.thread_id, approved=True if APPROVED_ENTITIES in response else False)
 
 @router.post("/facts-schema")
 async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
@@ -270,7 +274,7 @@ async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
         response = await agent.ainvoke({"messages": [nudge_message(FACTS_NUDGE)]}, config=config)
     if req.comfy and response.get(PROPOSED_FACTS):
         response = await approve_in_state(agent, config, PROPOSED_FACTS, APPROVED_FACTS)
-    return step_response(StepKey.PROPOSED_FACTS, response=response, thread_id=req.thread_id, approved=True if APPROVED_FACTS in response.get(APPROVED_FACTS,{}) else False)
+    return step_response(StepKey.PROPOSED_FACTS, response=response, thread_id=req.thread_id, approved=True if APPROVED_FACTS in response else False)
     
 
 async def approve_in_state(agent: Any, config: Dict[str, Any], proposed_key: str, approved_key: str) -> Dict[str, Any]:

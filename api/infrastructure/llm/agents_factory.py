@@ -30,11 +30,11 @@ class AgentsFactory:
                 return facts_agent(model=model, name=name,description=description, checkpointer=checkpointer, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len, retries=retries, retry_delay=retry_delay)
             
 
-    def kg_schema_refining_loop(self, max_iterations:int = 1, proposal_agent=None, critic_agent=None, checkpointer: AsyncNeo4jSaver = None, temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx):
+    def kg_schema_refining_loop(self, max_iterations:int = 1, proposal_agent=None, critic_agent=None, checkpointer: AsyncNeo4jSaver = None, temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx, retries:int = 0, retry_delay:float =0.5):
         if proposal_agent is None:
-            proposal_agent = self.kg_agent_by_step_key(StepKey.PROPOSED_CONSTRUCTION_PLAN, name="default", description="default", checkpointer=None, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len)
+            proposal_agent = self.kg_agent_by_step_key(StepKey.PROPOSED_CONSTRUCTION_PLAN, name="default", description="default", checkpointer=None, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len, retries=retries, retry_delay=retry_delay)
         if critic_agent is None:
-            critic_agent = self.kg_agent_by_step_key(StepKey.SCHEMA_CRITIC, name="default", description="default", checkpointer=None, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len)
+            critic_agent = self.kg_agent_by_step_key(StepKey.SCHEMA_CRITIC, name="default", description="default", checkpointer=None, temperature=temperature, top_p=top_p, top_k=top_k, num_predict=num_predict, ctx_len=ctx_len, retries=retries, retry_delay=retry_delay)
 
         return schema_refinement_loop(
             proposal_agent=proposal_agent,
