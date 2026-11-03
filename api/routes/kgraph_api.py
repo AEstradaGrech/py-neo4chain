@@ -3,19 +3,16 @@ from typing import Any, Dict, List
 import uuid
 from fastapi import APIRouter, Request
 from api.infrastructure.llm.agents_factory import AgentsFactory
-from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
-from api.infrastructure.llm.agent_utils import APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, APPROVED_FACTS, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, INSPECTED_NER_FILES, LIST_THREADS_QUERY, PROPOSED_ENTITIES, PROPOSED_FACTS, StepKey, agent_config, get_agent_state, get_thread_values, nudge_message, step_response
+
+from api.infrastructure.llm.agent_utils import StepKey, agent_config, get_agent_state, get_thread_values, nudge_message, step_response
 from api.infrastructure.llm.models.ner_agent import NER_NUDGE
 from api.infrastructure.llm.models.facts_agent import FACTS_NUDGE
-from api.infrastructure.llm.models.schema_critic_agent import schema_critic_agent
-from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE, schema_proposal_agent
-from api.infrastructure.llm.models.schema_refiner_agent import schema_refinement_loop
-from api.infrastructure.llm.agent_utils import ALL_AVAILABLE_FILES, APPROVED_FILES, APPROVED_USER_GOAL, PERCEIVED_USER_GOAL, PROPOSED_CONSTRUCTION_PLAN, SUGGESTED_FILES
-from api.models.kgraph_schemas import AgentRequestDto, KGAgentRequestDto, KGApproveRequestDto, KGSchemaRequestDto, KGStepResponseDto, MessageDto
-from api.infrastructure.llm.models.user_intent_agent import user_intent_agent
-from api.infrastructure.llm.models.file_suggester_agent import file_suggester_agent
-from api.utils.helpers import HTTPLoggedException, kgraph_intent_tracing
-from api.utils.statics import facts_max_nudges, ner_max_nudges, schema_proposal_max_nudges
+from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE
+from api.infrastructure.llm.statics import ALL_AVAILABLE_FILES, APPROVED_FILES, APPROVED_USER_GOAL, PERCEIVED_USER_GOAL, PROPOSED_CONSTRUCTION_PLAN, SUGGESTED_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, APPROVED_FACTS, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, INSPECTED_NER_FILES, LIST_THREADS_QUERY, PROPOSED_ENTITIES, PROPOSED_FACTS
+from api.models.kgraph_schemas import AgentRequestDto, KGAgentRequestDto, KGApproveRequestDto, KGSchemaRequestDto, KGStepResponseDto
+from api.utils.helpers import HTTPLoggedException
+from api.infrastructure.llm.agent_utils import kgraph_intent_tracing
+from api.infrastructure.llm.statics import facts_max_nudges, ner_max_nudges, schema_proposal_max_nudges
 from api.mappers.prompting_mapper import to_openai_messages
 from loguru import logger
 

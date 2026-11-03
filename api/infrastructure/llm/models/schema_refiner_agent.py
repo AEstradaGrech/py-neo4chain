@@ -16,12 +16,12 @@ from langchain.tools import tool, ToolRuntime
 from loguru import logger
 from typing_extensions import NotRequired
 from langchain.agents import create_agent
-from api.infrastructure.llm.agent_utils import APPROVED_FILES, APPROVED_USER_GOAL, FEEDBACK, PROPOSED_CONSTRUCTION_PLAN, KGState, dict_delta, ollama_retry_middleware, state_update, tool_success
+from api.infrastructure.llm.agent_utils import KGState, dict_delta, ollama_retry_middleware, state_update, tool_success
 from api.infrastructure.llm.models.schema_critic_agent import schema_critic_agent
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE, schema_proposal_agent
 from api.infrastructure.llm.tools.kgraph_tools import  approve_proposed_construction_plan, get_proposed_construction_plan
-from api.utils.helpers import agent_chat_model
-from api.utils.statics import schema_proposal_max_nudges, default_agent_numctx
+from api.infrastructure.llm.statics import default_agent_numctx, schema_proposal_max_nudges, default_agent_numctx, APPROVED_FILES, APPROVED_USER_GOAL, FEEDBACK, PROPOSED_CONSTRUCTION_PLAN
+
 
 DEFAULT_AGENT_NAME = "schema_refiner_agent"
 DEFAULT_DESCRIPTION = "Generates an enhanced version of the the proposed knowledge graph construction schema"

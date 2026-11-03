@@ -1,11 +1,11 @@
 
 #"Helps the user ideate on a knowledge graph use case."
 from typing import Any
-from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
-from api.utils.helpers import agent_chat_model
+from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware, agent_chat_model
 from langchain.agents import create_agent
 from api.infrastructure.llm.tools.kgraph_tools import approve_perceived_user_goal, set_perceived_user_goal
-from api.utils.statics import default_agent_numctx
+from api.infrastructure.llm.statics import default_agent_numctx
+
 DEFAULT_AGENT_NAME = "user_intent_analyzer_agent"
 DEFAULT_DESCRIPTION = "Helps the user ideate on a knowledge graph use case."
 

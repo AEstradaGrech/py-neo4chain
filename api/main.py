@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain_neo4j import AsyncNeo4jSaver
 from langfuse import get_client
 from neo4j import AsyncGraphDatabase
-from api.routes.devtests_api import router as dev_router 
+from api.infrastructure.repositories.neo4j.neo4j_driver import set_kg_driver
 from api.routes.tavily_api import router as tavily_router 
 from api.routes.neo4j_api import router as neo4j_router
 from api.routes.kgraph_api import router as kgraph_router
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     ) as driver,
         AsyncGraphDatabase.driver(
             os.environ["NEODB_URI"],
-            auth=(os.environ["NEODB_USERNAME"], os.environ["NEODB_PASS"]),
+            auth=(os.environ["NEO_USERNAME"], os.environ["NEO_PASS"]),
         ) as kg_driver,
     ):
         saver = AsyncNeo4jSaver(driver)
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
         await kg_driver.verify_connectivity()
         app.state.neo4j_driver = driver
         app.state.neo4j_saver = saver
+        set_kg_driver(kg_driver)
         app.state.neodb_driver = kg_driver
         yield
     
@@ -53,7 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(dev_router)
+
 app.include_router(tavily_router)
 app.include_router(neo4j_router)
 app.include_router(kgraph_router)

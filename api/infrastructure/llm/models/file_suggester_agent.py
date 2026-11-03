@@ -1,9 +1,8 @@
 from typing import Any
 
-from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware
+from api.infrastructure.llm.agent_utils import KGState, ollama_retry_middleware, agent_chat_model
 from api.infrastructure.llm.tools.kgraph_tools import approve_suggested_files, get_approved_user_goal, get_suggested_files, list_available_files, sample_file, set_suggested_files
-from api.utils.helpers import agent_chat_model
-from api.utils.statics import default_agent_numctx
+from api.infrastructure.llm.statics import default_agent_numctx
 from langchain.agents import create_agent
 
 DEFAULT_AGENT_NAME = "file_suggester_agent"

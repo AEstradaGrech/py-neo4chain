@@ -1,7 +1,8 @@
 from typing import Any, Dict
 from api.models.tavily_schemas import TavilyAgentRequest
-from api.utils.helpers import HTTPLoggedException, tracing_config
-from api.utils.statics import default_llm_model, tavily_research_poll_secs, tavily_research_timeout_secs
+from api.utils.helpers import HTTPLoggedException
+from api.infrastructure.llm.agent_utils import tracing_config
+from api.infrastructure.llm.statics import default_llm_model, tavily_research_poll_secs, tavily_research_timeout_secs
 from api.mappers.tavily_mapper import toCrawlTool, toMapTool, toResearchTool, toSearchTool, toExtractTool
 from fastapi import APIRouter
 from loguru import logger
@@ -9,7 +10,6 @@ from langchain.agents import create_agent
 from langchain_tavily import TavilyCrawl, TavilyMap, TavilyResearch, TavilySearch, TavilyGetResearch
 from langchain_tavily import TavilyExtract
 import asyncio
-import os
 import time
 
 router = APIRouter(prefix="/tavily")

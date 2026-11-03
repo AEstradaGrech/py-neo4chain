@@ -9,7 +9,8 @@ from api.infrastructure.llm.models.schema_proposal_agent import schema_proposal_
 from api.infrastructure.llm.models.schema_refiner_agent import schema_refinement_loop, schema_refiner_agent
 from api.infrastructure.llm.models.user_intent_agent import user_intent_agent
 from api.infrastructure.llm.agent_utils import StepKey
-from api.utils.statics import default_agent_numctx
+from api.infrastructure.llm.statics import default_agent_numctx
+
 class AgentsFactory:
 
     def kg_agent_by_step_key(self, step_key:str,  checkpointer: AsyncNeo4jSaver, model:str | None = None, name:str | None = "default", description:str | None= "default", temperature:float = 0.7, top_p:float = 0.9, top_k:int=40, num_predict:int = -2, ctx_len: int = default_agent_numctx, retries:int = 0, retry_delay:float =0.5):

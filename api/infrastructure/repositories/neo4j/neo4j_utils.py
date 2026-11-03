@@ -1,18 +1,4 @@
-default_llm_model="gpt-oss:20b"
-# context window for agents: Ollama defaults to 4096 tokens, which agentic prompts (instructions + tool schemas + tool outputs) overflow
-default_agent_numctx = 16384
-# times /propose-schema nudges the schema proposal agent when it finishes without proposing any construction
-schema_proposal_max_nudges = 2
-# times /ner-schema nudges the NER agent when it finishes without saving the proposed entity types
-ner_max_nudges = 2
-# times /facts-schema nudges the facts agent when it finishes without recording any fact type
-facts_max_nudges = 2
-default_embedding_model = "nomic-embed-text"
-default_embedding_dimensions = 512
-default_embedding_numctx = 1536
 default_neo4jdb = "neo4j"
-tavily_research_poll_secs = 5
-tavily_research_timeout_secs = 600
 
 CYPHER_GENERATION_TEMPLATE = """
 #Task:Generate Cypher statement to 
