@@ -2,12 +2,12 @@
 from typing import Any, Dict
 
 from neo4j import AsyncDriver
-from api.infrastructure.repositories.neo4j.neo4j_utils import default_neo4jdb
-from api.infrastructure.repositories.neo4j.neo4j_driver import kg_driver
+from api.infrastructure.repositories.neo4j.statics import default_neo4jdb
+from api.infrastructure.repositories.neo4j.neo4j_utils import kg_driver
 from api.utils.helpers import HTTPLoggedException
 
 
-class KGRepository:
+class Neo4jRepository:
     def __init__(self, driver: AsyncDriver | None = None, db_name: str = default_neo4jdb):
         self._driver = driver
         self._db_name = db_name

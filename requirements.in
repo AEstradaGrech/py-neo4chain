@@ -7,5 +7,7 @@ langchain-ollama
 langchain-tavily
 langchain-neo4j
 neo4j
+neo4j-graphrag
 pydantic
 langfuse
+rapidfuzz

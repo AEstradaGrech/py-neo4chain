@@ -7,7 +7,7 @@ from neo4j_graphrag.types import SearchType
 from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import CharacterTextSplitter
-from api.infrastructure.repositories.neo4j.neo4j_utils import default_neo4jdb, CYPHER_GENERATION_TEMPLATE, EXPANDED_CYPHER_GENERATION_TEMPLATE
+from api.infrastructure.repositories.neo4j.statics import default_neo4jdb, CYPHER_GENERATION_TEMPLATE, EXPANDED_CYPHER_GENERATION_TEMPLATE
 from api.utils.helpers import HTTPLoggedException
 from api.infrastructure.llm.agent_utils import ollama, ollama_embeddings
 from langchain_core.prompts import PromptTemplate
