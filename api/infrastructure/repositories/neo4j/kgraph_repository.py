@@ -1,22 +1,26 @@
 
 
 from typing import Any, Dict
-
+from pathlib import Path
 from neo4j import AsyncDriver
+from api.infrastructure.llm.statics import DATA_DIR
 from api.infrastructure.repositories.neo4j.statics import default_neo4jdb
 from api.infrastructure.repositories.neo4j.neo4j_repository import Neo4jRepository
 from api.utils.helpers import HTTPLoggedException
-
+from loguru import logger
 
 class KGraphRepository(Neo4jRepository):
 
     def __init__(self, driver: AsyncDriver | None = None, db_name: str = default_neo4jdb):
-        super.__init__(driver, db_name)
+        super().__init__(driver, db_name)
 
-    def load_nodes_from_csv(self, source_file: str, label: str,unique_column_name: str, properties: list[str]) -> Dict[str, Any]:
+    async def load_nodes_from_csv(self, source_file: str, label: str,unique_column_name: str, properties: list[str]) -> Dict[str, Any]:
         """Batch loading of nodes from a CSV file"""
-
+        logger.warning(f"LOAD NODES FROM CSV: {source_file}")
+        file_path = Path(source_file).as_posix()
+        logger.warning(f"LOAD NODES FROM CSV w/PATH: {file_path}")
         # load nodes from CSV file by merging on the unique_column_name value
+        # file:/// points to the container import directory (./data)
         query = f"""LOAD CSV WITH HEADERS FROM "file:///" + $source_file AS row
 CALL (row) {{
     MERGE (n:$($label) {{ {unique_column_name} : row[$unique_column_name] }})
@@ -24,28 +28,29 @@ CALL (row) {{
 }} IN TRANSACTIONS OF 1000 ROWS
 """
 
-        results =self.driver.execute_query(query, {
-            "source_file": source_file,
+        results = await self.send_query(query, {
+            "source_file": file_path,
             "label": label,
             "unique_column_name": unique_column_name,
             "properties": properties
         })
+        logger.warning(f"-- CSV NODES RESULT: {results} --")
         return results
 
-    def import_nodes(self, node_construction: dict) -> dict:
+    async def import_nodes(self, node_construction: dict) -> dict:
         """Import nodes as defined by a node construction rule."""
-
+        logger.warning(f"-- IMPORTING NODE CONSTRUCTION: {node_construction}")
         # create a uniqueness constraint for the unique_column
-        uniqueness_result = self.create_uniqueness_constraint(
+        uniqueness_result = await self.create_uniqueness_constraint(
             node_construction["label"],
             node_construction["unique_column_name"]
         )
-
+        logger.warning(f"CONSTRAINT RESULT {uniqueness_result}")
         if (uniqueness_result["status"] == "error"):
             return uniqueness_result
 
         # import nodes from csv
-        load_nodes_result = self.load_nodes_from_csv(
+        load_nodes_result = await self.load_nodes_from_csv(
             node_construction["source_file"],
             node_construction["label"],
             node_construction["unique_column_name"],
@@ -54,7 +59,7 @@ CALL (row) {{
 
         return load_nodes_result
 
-    def import_relationships(self, relationship_construction: dict) -> Dict[str, Any]:
+    async def import_relationships(self, relationship_construction: dict) -> Dict[str, Any]:
         """Import relationships as defined by a relationship construction rule."""
 
         # load nodes from CSV file by merging on the unique_column_name value 
@@ -68,9 +73,9 @@ CALL (row) {{
     FOREACH (k IN $properties | SET r[k] = row[k])
 }} IN TRANSACTIONS OF 1000 ROWS
         """
-        
-        results = self.driver.execute_query(query, {
-            "source_file": relationship_construction["source_file"],
+        source_file = Path(relationship_construction["source_file"]).as_posix()
+        results = await self.send_query(query, {
+            "source_file": source_file,
             "from_node_label": relationship_construction["from_node_label"],
             "from_node_column": relationship_construction["from_node_column"],
             "to_node_label": relationship_construction["to_node_label"],
@@ -80,30 +85,31 @@ CALL (row) {{
         })
         return results
 
-    def construct_domain_graph(self, construction_plan: dict) -> Dict[str, Any]:
+    async def construct_domain_graph(self, construction_plan: dict) -> Dict[str, Any]:
         """Construct a domain graph according to a construction plan."""
         # first, import nodes
         node_constructions = [value for value in construction_plan.values() if value['construction_type'] == 'node']
+        logger.warning(f"-- NODE CONSTRUCTIONS \n\n{node_constructions}")
         for node_construction in node_constructions:
-            self.import_nodes(node_construction)
+            await self.import_nodes(node_construction)
 
         # second, import relationships
         relationship_constructions = [value for value in construction_plan.values() if value['construction_type'] == 'relationship']
         for relationship_construction in relationship_constructions:
-            self.import_relationships(relationship_construction)
+            await self.import_relationships(relationship_construction)
 
     # Query the Neo4j database to find all nodes that have the __Entity__ label (entities created by the knowledge graph builder) and return their distinct label combinations.
-    def get_entity_labels(self):
-        results = self.driver.execute_query("""MATCH (n)
+    async def get_entity_labels(self):
+        results = await self.send_query("""MATCH (n)
 WHERE n:`__Entity__`
 RETURN DISTINCT labels(n) AS entity_labels
     """)
         return results['query_result']
 
     # Flatten the label arrays into individual label strings using UNWIND, which transforms the array of labels into separate rows for each label.
-    def get_unwinded_entity_labels(self):
+    async def get_unwinded_entity_labels(self):
         # unwind those lists of labels
-        results = self.driver.execute_query("""MATCH (n)
+        results = await self.send_query("""MATCH (n)
 WHERE n:`__Entity__`
 WITH DISTINCT labels(n) AS entity_labels
 UNWIND entity_labels AS entity_label
@@ -114,8 +120,8 @@ RETURN DISTINCT entity_label
 
     #Filter out internal Neo4j labels that start with double underscores ("__") to focus only on the meaningful entity type labels extracted from the text.
 
-    def filtered_labels(self):
-        results = self.driver.execute_query("""MATCH (n)
+    async def filtered_labels(self):
+        results = await self.send_query("""MATCH (n)
 WHERE n:`__Entity__`
 WITH DISTINCT labels(n) AS entity_labels
 UNWIND entity_labels AS entity_label
@@ -126,8 +132,8 @@ RETURN entity_label
         return results['query_result']
     
     #Combine the previous query steps into a reusable function that returns all unique entity labels from the subject graph, excluding internal Neo4j system labels.
-    def find_unique_entity_labels(self):
-        result = self.driver.execute_query("""MATCH (n)
+    async def find_unique_entity_labels(self):
+        result = await self.send_query("""MATCH (n)
 WHERE n:`__Entity__`
 WITH DISTINCT labels(n) AS entity_labels
 UNWIND entity_labels AS entity_label
@@ -140,8 +146,8 @@ RETURN collect(entity_label) as unique_entity_labels
         return result['query_result'][0]['unique_entity_labels']
 
     #Create a function to find all unique property keys for entities of a specific label in the subject graph. This helps identify what properties are available for matching with domain graph nodes.
-    def find_unique_entity_keys(self, entityLabel:str):
-        result = self.driver.execute_query("""MATCH (n:$($entityLabel))
+    async def find_unique_entity_keys(self, entityLabel:str):
+        result = await self.send_query("""MATCH (n:$($entityLabel))
 WHERE n:`__Entity__`
 WITH DISTINCT keys(n) as entityKeys
 UNWIND entityKeys as entityKey
@@ -155,8 +161,8 @@ RETURN collect(distinct(entityKey)) as unique_entity_keys
 
     #Create a function to find unique property keys for nodes of a specific label in the domain graph (nodes without the __Entity__ label). This enables comparison with subject graph properties for entity resolution.
             
-    def find_unique_domain_keys(self, domainLabel:str):
-        result = self.driver.execute_query("""MATCH (n:$($domainLabel))
+    async def find_unique_domain_keys(self, domainLabel:str):
+        result = await self.send_query("""MATCH (n:$($domainLabel))
 WHERE NOT n:`__Entity__` // exclude entities created by the KG builder, these should be domain nodes
 WITH DISTINCT keys(n) as domainKeys
 UNWIND domainKeys as domainKey
@@ -168,7 +174,7 @@ RETURN collect(distinct(domainKey)) as unique_domain_keys
             raise Exception(result['message'])
         return result['query_result'][0]['unique_domain_keys']
 
-    def correlate_subject_and_domain_nodes(self, label: str, entity_key: str, domain_key: str, similarity: float = 0.9) -> dict:
+    async def correlate_subject_and_domain_nodes(self, label: str, entity_key: str, domain_key: str, similarity: float = 0.9) -> dict:
         """Correlate entity and domain nodes based on label, entity key, and domain key,
         where the corresponding values of the entity and domain properties are similar
         
@@ -186,7 +192,7 @@ RETURN collect(distinct(domainKey)) as unique_domain_keys
         Returns:
             dict: A dictionary containing the correlation between the entity and domain nodes.
         """
-        results = self.driver.execute_query("""
+        results = await self.send_query("""
         MATCH (entity:$($entityLabel):`__Entity__`),(domain:$($entityLabel))
         WHERE apoc.text.jaroWinklerDistance(entity[$entityKey], domain[$domainKey]) < $distance
         MERGE (entity)-[r:CORRESPONDS_TO]->(domain)

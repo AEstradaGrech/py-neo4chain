@@ -1,7 +1,9 @@
 
 from typing import Any, Dict
 
+from loguru import logger
 from neo4j import AsyncDriver
+from neo4j.exceptions import DriverError, Neo4jError
 from api.infrastructure.repositories.neo4j.statics import default_neo4jdb
 from api.infrastructure.repositories.neo4j.neo4j_utils import kg_driver
 from api.utils.helpers import HTTPLoggedException
@@ -16,42 +18,57 @@ class Neo4jRepository:
     def driver(self) -> AsyncDriver:
         return self._driver or kg_driver() 
 
-    def neo4j_is_ready(self):
-        return self.driver.execute_query("RETURN 'Neo4j is Ready!' as message")
-    
-    def drop_neo4j_indexes(self):
+    async def neo4j_is_ready(self):
+        return await self.send_query("RETURN 'Neo4j is Ready!' as message")
+
+    async def send_query(self, cypher: str, parameters: dict | None = None) -> Dict[str, Any]:
+        """Runs a query in an implicit (auto-commit) transaction, so 'CALL {...} IN TRANSACTIONS' works.
+
+        Returns:
+            {"status": "success", "query_result": [row dicts]} or {"status": "error", "error_message": str}
+        """
+        try:
+            async with self.driver.session(database=self._db_name) as session:
+                result = await session.run(cypher, parameters or {})
+                records = await result.data()   # list[dict]; consume it inside the session
+            return {"status": "success", "query_result": records}
+        except (Neo4jError, DriverError) as e:
+            logger.error(f"Cypher query failed: {e}")
+            return {"status": "error", "error_message": str(e)}
+        
+    async def drop_neo4j_indexes(self):
         """Drops and constraints and indexes present on the neo4j graph database
 
         Returns:
             Success or an error.
         """
         # remove all constraints
-        list_constraints = self.driver.execute_query(
+        list_constraints = await self.send_query(
             """SHOW CONSTRAINTS YIELD name"""
         )
         if (list_constraints == "error"):
             return list_constraints
         constraint_names = [row["name"] for row in list_constraints["query_result"]]
         for constraint_name in constraint_names:
-            dropped_constraint = self.driver.execute_query("""DROP CONSTRAINT $constraint_name""", {"constraint_name": constraint_name})
+            dropped_constraint = await self.send_query("""DROP CONSTRAINT $constraint_name""", {"constraint_name": constraint_name})
             if (dropped_constraint["status"] == "error"):
                 return dropped_constraint
 
         # remove all indexes
-        list_indexes = self.driver.execute_query(
+        list_indexes = await self.send_query(
             """SHOW INDEXES YIELD name"""
         )
         if (list_indexes == "error"):
             raise HTTPLoggedException(status_code=500, detail=f"An error has occured while listing the DB indexes: {list_indexes}")
         index_names = [row["name"] for row in list_indexes["query_result"]]
         for index_name in index_names:
-            dropped_index = self.driver.execute_query("""DROP INDEX $index_name""", {"index_name": index_name})
+            dropped_index = await self.send_query("""DROP INDEX $index_name""", {"index_name": index_name})
             if (dropped_index["status"] == "error"):
                 raise HTTPLoggedException(status_code=500, detail=f"An error has occured while dropping the DB index: {dropped_index}")
             
         return list_indexes
     
-    def clear_neo4j_data(self) -> bool:
+    async def clear_neo4j_data(self) -> bool:
         """Clears all data from the neo4j graph database.
 
         Use with caution!
@@ -60,13 +77,13 @@ class Neo4jRepository:
             True if Success 
         """
         # First, remove all nodes and relationships in batches
-        data_removed = self.driver.execute_query("""MATCH (n) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS""")
+        data_removed = await self.send_query("""MATCH (n) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS""")
         if (data_removed["status"] == "error") :
             raise HTTPLoggedException(status_code=500, detail=f"An error has occured while clearing the DB data: {data_removed}")
 
         return True
 
-    def get_apoc_procedure_names(self):
+    async def get_apoc_procedure_names(self):
         """List all APOC procedure names.
         APOC (Awesome Procedures on Cypher) is a library of procedures and functions that extends the capabilities of Neo4j.
 
@@ -75,7 +92,7 @@ class Neo4jRepository:
         """
         cypher = "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN name"
 
-        result = self.driver.execute_query(cypher)
+        result = await self.send_query(cypher)
         
         if result["status"] == "error":
             return result
@@ -86,7 +103,7 @@ class Neo4jRepository:
         
         return apoc_procedure_names
 
-    def get_apoc_version(self) -> Dict[str, Any]:
+    async def get_apoc_version(self) -> Dict[str, Any]:
         """Get the version of APOC installed in the Neo4j database.
 
         Returns:
@@ -94,25 +111,25 @@ class Neo4jRepository:
         """
         cypher = "RETURN apoc.version() AS apoc_version"
 
-        result = self.driver.execute_query(cypher)
+        result = await self.send_query(cypher)
         
         if result["status"] == "error":
             raise HTTPLoggedException(status_code=404,detail="An error has occured while checking the apoc version")
         
         return result["query_result"][0]["apoc_version"]
         
-    def get_neo4j_version(self) -> Dict[str, Any]:
+    async def get_neo4j_version(self) -> Dict[str, Any]:
         """Get the version and edition of the Neo4j database.
         
         """
         cypher = "CALL dbms.components() yield name, versions, edition unwind versions as version return name, version, edition"
 
-        result = self.driver.execute_query(cypher)
+        result = await self.send_query(cypher)
 
         return result
         
 
-    def create_uniqueness_constraint(self, label: str,unique_property_key: str):
+    async def create_uniqueness_constraint(self, label: str,unique_property_key: str):
         """Creates a uniqueness constraint for a node label and property key.
         A uniqueness constraint ensures that no two nodes with the same label and property key have the same value.
         This improves the performance and integrity of data import and later queries.
@@ -130,5 +147,5 @@ class Neo4jRepository:
         query = f"""CREATE CONSTRAINT `{constraint_name}` IF NOT EXISTS
         FOR (n:`{label}`)
         REQUIRE n.`{unique_property_key}` IS UNIQUE"""
-        results = self.driver.execute_query(query)
+        results = await self.send_query(query)
         return results

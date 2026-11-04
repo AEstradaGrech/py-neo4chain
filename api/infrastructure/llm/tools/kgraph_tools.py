@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 
-from api.infrastructure.llm.agent_utils import StepKey, state_update, tool_error, tool_success, update_state
+from api.infrastructure.llm.agent_utils import state_update, tool_error, tool_success, update_state
 from api.infrastructure.llm.statics import DATA_DIR, DATA_FOLDERS, APPROVED_ENTITIES, APPROVED_FACTS, APPROVED_LABELS, INSPECTED_NER_FILES, PERCEIVED_USER_GOAL, PROPOSED_ENTITIES, PROPOSED_FACTS, SUGGESTED_FILES, PROPOSED_CONSTRUCTION_PLAN, ALL_AVAILABLE_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_FILES, APPROVED_USER_GOAL, NODE_CONSTRUCTION, RELATIONSHIP_CONSTRUCTION, SEARCH_RESULTS
 
 
@@ -112,7 +112,7 @@ def list_available_files(tool_runtime: ToolRuntime) -> Command:
     import_dir = Path(DATA_DIR)
 
     # get a list of relative file names, so files must be rooted at the import dir
-    file_names = [str(x.relative_to(import_dir))
+    file_names = [str(x.relative_to(import_dir).as_posix())
                  for x in import_dir.rglob("*")
                  if x.is_file()]
 

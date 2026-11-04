@@ -9,7 +9,8 @@ from api.infrastructure.llm.models.ner_agent import NER_NUDGE
 from api.infrastructure.llm.models.facts_agent import FACTS_NUDGE
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE
 from api.infrastructure.llm.statics import ALL_AVAILABLE_FILES, APPROVED_FILES, APPROVED_USER_GOAL, PERCEIVED_USER_GOAL, PROPOSED_CONSTRUCTION_PLAN, SUGGESTED_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, APPROVED_FACTS, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, INSPECTED_NER_FILES, LIST_THREADS_QUERY, PROPOSED_ENTITIES, PROPOSED_FACTS
-from api.models.kgraph_schemas import AgentRequestDto, KGAgentRequestDto, KGApproveRequestDto, KGSchemaRequestDto, KGStepResponseDto
+from api.infrastructure.repositories.neo4j.kgraph_repository import KGraphRepository
+from api.models.kgraph_schemas import KGAgentRequestDto, KGApproveRequestDto, KGSchemaRequestDto, KGStepResponseDto
 from api.utils.helpers import HTTPLoggedException
 from api.infrastructure.llm.agent_utils import kgraph_intent_tracing
 from api.infrastructure.llm.statics import facts_max_nudges, ner_max_nudges, schema_proposal_max_nudges
@@ -54,7 +55,7 @@ async def get_thread_messages(thread_id: str, request: Request):
 
 @router.post("/approve-step")
 async def approve_step(req: KGApproveRequestDto, request: Request) -> Any:
-    await validated_request_thread(req, request)
+    await validated_request_thread(req.thread_id, request)
     factory = AgentsFactory()
     #check KEY exists
     agent = factory.kg_agent_by_step_key(step_key=req.state_key, model=req.model, checkpointer=request.app.state.neo4j_saver)
@@ -102,7 +103,7 @@ async def user_intent(req: KGAgentRequestDto, request: Request) -> Any:
 
 @router.post("/suggest-files")
 async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
-    await validated_request_thread(req, request)
+    await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, values=[APPROVED_USER_GOAL], request=request)
     config = agent_config(req.thread_id, kgraph_intent_tracing())
     messages = [{"role": "user", "content": req.input}]
@@ -142,7 +143,7 @@ async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
 
 @router.post("/propose-schema")
 async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
-    await validated_request_thread(req, request)
+    await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, values=[APPROVED_USER_GOAL, APPROVED_FILES], request=request)
     config = agent_config(req.thread_id, kgraph_intent_tracing())
     nudges = 0
@@ -193,7 +194,7 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
 
 @router.post("/refined-schema")
 async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
-    await validated_request_thread(req, request)
+    await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, values=[APPROVED_USER_GOAL, APPROVED_FILES], request=request) 
     config = agent_config(req.thread_id, kgraph_intent_tracing())
     factory = AgentsFactory()
@@ -215,7 +216,7 @@ async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
     
 @router.post("/ner-schema")
 async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
-    await validated_request_thread(req, request)
+    await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, request=request, values=[APPROVED_USER_GOAL, APPROVED_FILES, APPROVED_CONSTRUCTION_PLAN])
     config = agent_config(req.thread_id, kgraph_intent_tracing())
     factory = AgentsFactory()
@@ -244,7 +245,7 @@ async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
 
 @router.post("/facts-schema")
 async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
-    await validated_request_thread(req, request)
+    await validated_request_thread(req.thread_id, request)
     # facts relate the approved entity types, found in the text files inspected by the NER step
     await check_thread_values(thread_id=req.thread_id, request=request,
                               values=[APPROVED_USER_GOAL, APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, INSPECTED_NER_FILES])
@@ -272,7 +273,25 @@ async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
     if req.comfy and response.get(PROPOSED_FACTS):
         response = await approve_in_state(agent, config, PROPOSED_FACTS, APPROVED_FACTS)
     return step_response(StepKey.PROPOSED_FACTS, response=response, thread_id=req.thread_id, approved=True if APPROVED_FACTS in response else False)
+
+@router.get("fill-kg-db/{thread_id}")
+async def fill_kg_db(thread_id:str, request:Request):
+    repo = KGraphRepository()
+    await validated_request_thread(thread_id=thread_id, request=request)
+    state = await get_thread_state(thread_id=thread_id, request=request)
+    if state is None:
+        raise HTTPLoggedException(status_code=400, detail=f"No agent state has been found for thread_id: {thread_id}")
+    await check_thread_values(thread_id=thread_id, values=[APPROVED_CONSTRUCTION_PLAN,APPROVED_ENTITIES, APPROVED_ENTITIES, INSPECTED_NER_FILES], request=request)
+    response = await repo.construct_domain_graph(state.get(APPROVED_CONSTRUCTION_PLAN))
+    return response
     
+@router.post("build-kg")
+async def build_kg(req:KGAgentRequestDto, request: Request) -> Any:
+    # get_state(req.thread_id)
+    #construct_domain_graph(state.approved_plan)
+    # foreach inspected_file (markdowns)
+    #   make_kg_builder(file_path)
+    return "WIP"
 
 async def approve_in_state(agent: Any, config: Dict[str, Any], proposed_key: str, approved_key: str) -> Dict[str, Any]:
     """comfy approval in code: copies the proposal to its approved key and returns the updated state.
@@ -282,11 +301,11 @@ async def approve_in_state(agent: Any, config: Dict[str, Any], proposed_key: str
     await agent.aupdate_state(config, {approved_key: state[proposed_key]})
     return (await agent.aget_state(config)).values
 
-async def validated_request_thread(req: AgentRequestDto, request:Request) -> Any:
-    if req.thread_id is None or req.thread_id == "":
+async def validated_request_thread(thread_id:str, request:Request) -> Any:
+    if thread_id is None or thread_id == "":
         raise HTTPLoggedException(status_code=400, detail="No thread id has been found in the request.")
-    thread = await get_thread(thread_id=req.thread_id, request=request)
-    if thread is None or thread["thread_id"] != req.thread_id:
+    thread = await get_thread(thread_id=thread_id, request=request)
+    if thread is None or thread["thread_id"] != thread_id:
         raise HTTPLoggedException(status_code=404, detail="Request thread id not found in DB")
     return thread
 
