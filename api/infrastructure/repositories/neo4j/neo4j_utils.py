@@ -1,16 +1,24 @@
 # api/infrastructure/db/neo4j_drivers.py
+from pathlib import Path
+
+from loguru import logger
 from neo4j import AsyncDriver
 from neo4j_graphrag.components.text_splitters.base import TextSplitter
-from neo4j_graphrag.components.data_loader import DataLoader, MarkdownLoader
-from neo4j_graphrag.components.types import TextChunk, TextChunks, LoadedDocument, DocumentInfo
+from neo4j_graphrag.components.data_loader import MarkdownLoader
+from neo4j_graphrag.components.types import TextChunk
 import re
 from collections.abc import Iterator
 from neo4j import GraphDatabase
 from neo4j_graphrag.llm import OllamaLLM
 from neo4j_graphrag.embeddings import OllamaEmbeddings
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
-from api.infrastructure.llm.statics import default_llm_model
+from api.infrastructure.llm.agent_utils import ollama_embeddings
+from api.infrastructure.llm.schemas.schemas import OllamaEmbeddingsConfig
+from api.infrastructure.llm.statics import default_llm_model, default_embedding_model
 from api.infrastructure.repositories.neo4j.statics import default_neo4jdb
+from neo4j_graphrag.experimental.pipeline.pipeline import PipelineResult
+
+from api.utils.helpers import validated_file_path
 
 _kg_driver: AsyncDriver | None = None
 
@@ -49,16 +57,17 @@ class TitledMarkdownLoader(MarkdownLoader):
 
 def simple_kg_pipeline(extraction_prompt:str, entity_schema, llm:str = None, embedding_model:str = None, db_name:str = None) -> SimpleKGPipeline:
     return SimpleKGPipeline(
-    llm=OllamaLLM(model_name=default_llm_model if llm is None else llm),
-    driver=kg_sync_driver(),                       # ¡síncrono! (ver abajo)
-    embedder=OllamaEmbeddings(model=default_embedding_model if embedding_model is None else embedding_model),
-    from_file=True,                              # 'from_pdf' está deprecado
-    file_loader=TitledMarkdownLoader(),          # 'pdf_loader' está deprecado
-    text_splitter=RegexTextSplitter(r"\r?\n(?=## )"),
-    schema=entity_schema,
-    prompt_template=extraction_prompt,
-    neo4j_database=default_neo4jdb if db_name is None else db_name,
-)
+        llm=OllamaLLM(model_name=default_llm_model if llm is None else llm),
+        driver=kg_sync_driver(),                       # ¡síncrono! (ver abajo)
+        embedder=OllamaEmbeddings(model=default_embedding_model if embedding_model is None else embedding_model),#ollama_embeddings(model=embeddings_config.model, dimensions=embeddings_config.dimensions, num_ctx=embeddings_config.num_ctx),
+        from_file=True,                              # 'from_pdf' está deprecado
+        file_loader=TitledMarkdownLoader(),          # 'pdf_loader' está deprecado
+        text_splitter=RegexTextSplitter(r"\r?\n(?=## )"),
+        schema=entity_schema,
+        prompt_template=extraction_prompt,
+        neo4j_database=default_neo4jdb if db_name is None else db_name,
+    )
+
 """
 entity_schema = {
     "node_types": schema_node_types,
@@ -158,7 +167,19 @@ def make_kg_builder(file_path:str, entity_schema, llm:str = None, embedding_mode
         embedding_model=embedding_model,
         db_name=db_name)
 
-#await pipeline.run_async(file_path="data/....md")
+async def run_kg_builder(file_path:str, entity_schema, llm:str = None, embedding_model:str = None, db_name:str = None) -> PipelineResult:
+    """Builds a KG builder for a given file, which is used to contextualize the chunking and entity extraction."""
+    path = validated_file_path(file_path=file_path)
+    context = file_context(path)
+    contextualized_prompt = contextualize_er_extraction_prompt(context)
+    pipeline =simple_kg_pipeline(
+        extraction_prompt=contextualized_prompt,
+        entity_schema=entity_schema,
+        llm=llm,
+        embedding_model=embedding_model,
+        db_name=db_name)
+    logger.warning(f"-- running KG pipeline for file: {file_path}")
+    return await pipeline.run_async(file_path=path)
 
 def normalize_key(label:str, key:str) -> str:
     """Normalizes a a property key for a given label.

@@ -41,3 +41,9 @@ class KGStepResponseDto(BaseModel):
     status:str = Field(description="Tag with step status info")
     message: Any = Field(description="LLM message (if any)", default=None)
     output_state: dict[str, Any] = Field(description="Agent State to return", default={})
+
+class KGPipelineRequestDto(BaseModel):
+    thread_id: str = Field(description="Thread ID. Leave empty to create a new thread id")
+    llm_model:Optional[str]= Field(description="LLM model for the SimpleKGPipeline", default=None)
+    embedding_model:Optional[str]= Field(description="Embeddings model for the SimpleKGPipeline", default=None)
+    db_name:Optional[str]= Field(description="Neo4j DB name to use with the SimpleKGPipeline", default=None)

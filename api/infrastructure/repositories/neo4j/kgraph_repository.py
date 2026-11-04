@@ -87,17 +87,22 @@ CALL (row) {{
 
     async def construct_domain_graph(self, construction_plan: dict) -> Dict[str, Any]:
         """Construct a domain graph according to a construction plan."""
+        results = {
+            "nodes":[],
+            "relationships":[]
+        }
         # first, import nodes
         node_constructions = [value for value in construction_plan.values() if value['construction_type'] == 'node']
         logger.warning(f"-- NODE CONSTRUCTIONS \n\n{node_constructions}")
         for node_construction in node_constructions:
             await self.import_nodes(node_construction)
-
+            results["nodes"].append(node_construction)
         # second, import relationships
         relationship_constructions = [value for value in construction_plan.values() if value['construction_type'] == 'relationship']
         for relationship_construction in relationship_constructions:
             await self.import_relationships(relationship_construction)
-
+            results["relationships"].append(relationship_construction) 
+        return results
     # Query the Neo4j database to find all nodes that have the __Entity__ label (entities created by the knowledge graph builder) and return their distinct label combinations.
     async def get_entity_labels(self):
         results = await self.send_query("""MATCH (n)

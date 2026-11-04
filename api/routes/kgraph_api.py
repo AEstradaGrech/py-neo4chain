@@ -1,4 +1,5 @@
 
+from pathlib import Path
 from typing import Any, Dict, List
 import uuid
 from fastapi import APIRouter, Request
@@ -10,7 +11,8 @@ from api.infrastructure.llm.models.facts_agent import FACTS_NUDGE
 from api.infrastructure.llm.models.schema_proposal_agent import SCHEMA_PROPOSAL_NUDGE
 from api.infrastructure.llm.statics import ALL_AVAILABLE_FILES, APPROVED_FILES, APPROVED_USER_GOAL, PERCEIVED_USER_GOAL, PROPOSED_CONSTRUCTION_PLAN, SUGGESTED_FILES, APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, APPROVED_FACTS, DELETE_THREAD_BRANCHES_QUERY, FIND_THREAD_QUERY, INSPECTED_NER_FILES, LIST_THREADS_QUERY, PROPOSED_ENTITIES, PROPOSED_FACTS
 from api.infrastructure.repositories.neo4j.kgraph_repository import KGraphRepository
-from api.models.kgraph_schemas import KGAgentRequestDto, KGApproveRequestDto, KGSchemaRequestDto, KGStepResponseDto
+from api.infrastructure.repositories.neo4j.neo4j_utils import make_kg_builder, run_kg_builder
+from api.models.kgraph_schemas import KGAgentRequestDto, KGApproveRequestDto, KGPipelineRequestDto, KGSchemaRequestDto, KGStepResponseDto
 from api.utils.helpers import HTTPLoggedException
 from api.infrastructure.llm.agent_utils import kgraph_intent_tracing
 from api.infrastructure.llm.statics import facts_max_nudges, ner_max_nudges, schema_proposal_max_nudges
@@ -274,27 +276,47 @@ async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
         response = await approve_in_state(agent, config, PROPOSED_FACTS, APPROVED_FACTS)
     return step_response(StepKey.PROPOSED_FACTS, response=response, thread_id=req.thread_id, approved=True if APPROVED_FACTS in response else False)
 
-@router.get("fill-kg-db/{thread_id}")
+@router.get("/insert-construction-plan/{thread_id}")
 async def fill_kg_db(thread_id:str, request:Request):
     repo = KGraphRepository()
     await validated_request_thread(thread_id=thread_id, request=request)
     state = await get_thread_state(thread_id=thread_id, request=request)
     if state is None:
         raise HTTPLoggedException(status_code=400, detail=f"No agent state has been found for thread_id: {thread_id}")
-    await check_thread_values(thread_id=thread_id, values=[APPROVED_CONSTRUCTION_PLAN,APPROVED_ENTITIES, APPROVED_ENTITIES, INSPECTED_NER_FILES], request=request)
+    await check_thread_values(thread_id=thread_id, values=[APPROVED_CONSTRUCTION_PLAN,APPROVED_ENTITIES, APPROVED_ENTITIES], request=request)
     response = await repo.construct_domain_graph(state.get(APPROVED_CONSTRUCTION_PLAN))
     return response
     
-@router.post("build-kg")
-async def build_kg(req:KGAgentRequestDto, request: Request) -> Any:
-    # get_state(req.thread_id)
-    #construct_domain_graph(state.approved_plan)
-    # foreach inspected_file (markdowns)
-    #   make_kg_builder(file_path)
-    return "WIP"
+@router.post("/build-kg")
+async def build_kg(req: KGPipelineRequestDto, request: Request) -> Any:
+    repo = KGraphRepository()
+    await validated_request_thread(thread_id=req.thread_id, request=request)
+    state = await get_thread_state(thread_id=req.thread_id, request=request)
+    if state is None:
+        raise HTTPLoggedException(status_code=400, detail=f"No agent state has been found for thread_id: {req.thread_id}")
+    await check_thread_values(thread_id=req.thread_id, values=[APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, APPROVED_ENTITIES, INSPECTED_NER_FILES], request=request)
+    # TODO: check inserted
+    inserted_construction_plan = await repo.construct_domain_graph(state.get(APPROVED_CONSTRUCTION_PLAN))
+    if "nodes" not in inserted_construction_plan or "relationships" not in inserted_construction_plan:
+        raise HTTPLoggedException(status_code=500, detail=f"An error has occured while inserting the construction plan for thread id: {req.thread_id}")    
+    results = {}
+    schema_node_types = state.get(APPROVED_ENTITIES)
+    approved_facts = state.get(APPROVED_FACTS)
+    schema_relationship_types = [key.upper() for key in approved_facts.keys()]
+    schema_patterns = [[ fact['subject_label'], fact['predicate_label'].upper(), fact['object_label']] for fact in approved_facts.values()]
+    entity_schema = {
+        "node_types": schema_node_types,
+        "relationship_types": schema_relationship_types,
+        "patterns": schema_patterns,
+        "additional_node_types": False, # True would be less strict, allowing unknown node types
+    }
+    logger.warning(f">> ENTITY SCHEMA:\n\n{entity_schema}")
+    for product_review in state.get(INSPECTED_NER_FILES):
+        results[product_review] = await run_kg_builder(file_path=product_review, entity_schema=entity_schema, llm=req.llm_model, embedding_model=req.embedding_model, db_name=req.db_name)
+    return results
 
 
-@router.delete("kgraph/clear-data")
+@router.delete("clear-data")
 async def clear_kgraph_data(full_delete:bool):
     repo = KGraphRepository()
     return await repo.clear_neo4j_data(is_full_delete=full_delete)
