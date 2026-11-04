@@ -293,6 +293,12 @@ async def build_kg(req:KGAgentRequestDto, request: Request) -> Any:
     #   make_kg_builder(file_path)
     return "WIP"
 
+
+@router.delete("kgraph/clear-data")
+async def clear_kgraph_data(full_delete:bool):
+    repo = KGraphRepository()
+    return await repo.clear_neo4j_data(is_full_delete=full_delete)
+    
 async def approve_in_state(agent: Any, config: Dict[str, Any], proposed_key: str, approved_key: str) -> Dict[str, Any]:
     """comfy approval in code: copies the proposal to its approved key and returns the updated state.
     Agents with current_request_only take an 'Ok, approved' message as a new request: they don't see their

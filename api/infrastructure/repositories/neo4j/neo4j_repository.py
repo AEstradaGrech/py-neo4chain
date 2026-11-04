@@ -36,51 +36,62 @@ class Neo4jRepository:
             logger.error(f"Cypher query failed: {e}")
             return {"status": "error", "error_message": str(e)}
         
-    async def drop_neo4j_indexes(self):
-        """Drops and constraints and indexes present on the neo4j graph database
+    async def drop_neo4j_indexes(self) -> Dict[str, Any]:
+        """Drops all the constraints and indexes present on the neo4j graph database, except the LOOKUP indexes:
+        Neo4j creates them by default to resolve 'MATCH (n:Label)' and relationship type lookups.
 
         Returns:
-            Success or an error.
+            {"status": "success", "dropped_constraints": [names], "dropped_indexes": [names]}
+            or the error of the query that failed.
         """
-        # remove all constraints
+        # remove all constraints first: dropping a constraint also drops the index that backs it
         list_constraints = await self.send_query(
             """SHOW CONSTRAINTS YIELD name"""
         )
-        if (list_constraints == "error"):
+        if (list_constraints["status"] == "error"):
             return list_constraints
         constraint_names = [row["name"] for row in list_constraints["query_result"]]
         for constraint_name in constraint_names:
-            dropped_constraint = await self.send_query("""DROP CONSTRAINT $constraint_name""", {"constraint_name": constraint_name})
+            dropped_constraint = await self.send_query("""DROP CONSTRAINT $constraint_name IF EXISTS""", {"constraint_name": constraint_name})
             if (dropped_constraint["status"] == "error"):
                 return dropped_constraint
 
-        # remove all indexes
+        # remove the remaining indexes (vector, fulltext, the ones created by hand...), keeping the LOOKUP ones
         list_indexes = await self.send_query(
-            """SHOW INDEXES YIELD name"""
+            """SHOW INDEXES YIELD name, type WHERE type <> 'LOOKUP' RETURN name"""
         )
-        if (list_indexes == "error"):
-            raise HTTPLoggedException(status_code=500, detail=f"An error has occured while listing the DB indexes: {list_indexes}")
+        if (list_indexes["status"] == "error"):
+            return list_indexes
         index_names = [row["name"] for row in list_indexes["query_result"]]
         for index_name in index_names:
-            dropped_index = await self.send_query("""DROP INDEX $index_name""", {"index_name": index_name})
+            dropped_index = await self.send_query("""DROP INDEX $index_name IF EXISTS""", {"index_name": index_name})
             if (dropped_index["status"] == "error"):
-                raise HTTPLoggedException(status_code=500, detail=f"An error has occured while dropping the DB index: {dropped_index}")
-            
-        return list_indexes
-    
-    async def clear_neo4j_data(self) -> bool:
+                return dropped_index
+
+        return {"status": "success", "dropped_constraints": constraint_names, "dropped_indexes": index_names}
+
+    async def clear_neo4j_data(self, is_full_delete:bool = False) -> bool:
         """Clears all data from the neo4j graph database.
 
         Use with caution!
 
+        Args:
+            is_full_delete: also drops the constraints and indexes (except the LOOKUP ones), so their labels stop
+                being listed by 'db.labels()'. Property keys are never removed: that requires recreating the database.
+
         Returns:
-            True if Success 
+            True if Success
         """
-        # First, remove all nodes and relationships in batches
+        logger.warning("DELETING ALL DATA" + (" AND CONSTRAINTS/INDEXES" if is_full_delete else ""))
+        # remove all nodes and relationships in batches
         data_removed = await self.send_query("""MATCH (n) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS""")
         if (data_removed["status"] == "error") :
             raise HTTPLoggedException(status_code=500, detail=f"An error has occured while clearing the DB data: {data_removed}")
 
+        if is_full_delete:
+            schema_removed = await self.drop_neo4j_indexes()
+            if (schema_removed["status"] == "error"):
+                raise HTTPLoggedException(status_code=500, detail=f"An error has occured while dropping the DB constraints and indexes: {schema_removed}")
         return True
 
     async def get_apoc_procedure_names(self):
