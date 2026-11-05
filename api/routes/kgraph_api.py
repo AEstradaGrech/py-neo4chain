@@ -14,7 +14,7 @@ from api.infrastructure.repositories.neo4j.kgraph_repository import KGraphReposi
 from api.infrastructure.repositories.neo4j.neo4j_utils import make_kg_builder, run_kg_builder
 from api.models.kgraph_schemas import KGAgentRequestDto, KGApproveRequestDto, KGPipelineRequestDto, KGSchemaRequestDto, KGStepResponseDto
 from api.utils.helpers import HTTPLoggedException
-from api.infrastructure.llm.agent_utils import kgraph_intent_tracing
+from api.infrastructure.llm.agent_utils import kgraph_tracing
 from api.infrastructure.llm.statics import facts_max_nudges, ner_max_nudges, schema_proposal_max_nudges
 from api.mappers.prompting_mapper import to_openai_messages
 from loguru import logger
@@ -66,7 +66,7 @@ async def approve_step(req: KGApproveRequestDto, request: Request) -> Any:
     state = await get_agent_state(agent, req.thread_id)
     if req.state_key not in state:
         raise HTTPLoggedException(status_code=400, detail="The step to approve is not present in the agent state")
-    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    config = agent_config(req.thread_id, kgraph_tracing(step_tag=req.state_key))
     messages = [{"role": "user", "content": req.input}]
     response = await agent.ainvoke({"messages" : messages},config=config)
     return response
@@ -86,7 +86,7 @@ async def user_intent(req: KGAgentRequestDto, request: Request) -> Any:
         num_predict=req.max_tokens,
         retries=req.retries, 
         retry_delay=req.retry_delay)
-    config = agent_config(thread_id, kgraph_intent_tracing())
+    config = agent_config(thread_id, kgraph_tracing(step_tag=StepKey.PERCEIVED_USER_GOAL))
     messages = [{"role": "user", "content": req.input}]
     response = await agent.ainvoke({"messages" : messages},config=config)
     print(response)
@@ -107,7 +107,7 @@ async def user_intent(req: KGAgentRequestDto, request: Request) -> Any:
 async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
     await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, values=[APPROVED_USER_GOAL], request=request)
-    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    config = agent_config(req.thread_id, kgraph_tracing(step_tag=StepKey.SUGGESTED_FILES))
     messages = [{"role": "user", "content": req.input}]
     factory = AgentsFactory()
     agent = factory.kg_agent_by_step_key(
@@ -147,7 +147,7 @@ async def files_suggestion(req: KGAgentRequestDto, request: Request) -> Any:
 async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
     await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, values=[APPROVED_USER_GOAL, APPROVED_FILES], request=request)
-    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    config = agent_config(req.thread_id, kgraph_tracing(step_tag=StepKey.PROPOSED_CONSTRUCTION_PLAN))
     nudges = 0
     factory = AgentsFactory()
     if req.num_refinements is not None and req.num_refinements > 0:
@@ -198,7 +198,7 @@ async def propose_schema(req: KGSchemaRequestDto, request:Request) -> Any:
 async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
     await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, values=[APPROVED_USER_GOAL, APPROVED_FILES], request=request) 
-    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    config = agent_config(req.thread_id, kgraph_tracing(step_tag=StepKey.PROPOSED_CONSTRUCTION_PLAN))
     factory = AgentsFactory()
     schema_refiner = factory.kg_agent_by_step_key(
         step_key=StepKey.SCHEMA_REFINER, 
@@ -220,7 +220,7 @@ async def refined_schema(req: KGSchemaRequestDto, request:Request) -> Any:
 async def ner_schema(req: KGAgentRequestDto, request:Request) -> Any:
     await validated_request_thread(req.thread_id, request)
     await check_thread_values(thread_id=req.thread_id, request=request, values=[APPROVED_USER_GOAL, APPROVED_FILES, APPROVED_CONSTRUCTION_PLAN])
-    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    config = agent_config(req.thread_id, kgraph_tracing(step_tag=StepKey.PROPOSED_ENTITIES))
     factory = AgentsFactory()
     agent = factory.kg_agent_by_step_key(
         step_key=StepKey.PROPOSED_ENTITIES, 
@@ -251,7 +251,7 @@ async def facts_schema(req: KGAgentRequestDto, request:Request) -> Any:
     # facts relate the approved entity types, found in the text files inspected by the NER step
     await check_thread_values(thread_id=req.thread_id, request=request,
                               values=[APPROVED_USER_GOAL, APPROVED_CONSTRUCTION_PLAN, APPROVED_ENTITIES, INSPECTED_NER_FILES])
-    config = agent_config(req.thread_id, kgraph_intent_tracing())
+    config = agent_config(req.thread_id, kgraph_tracing(step_tag=StepKey.PROPOSED_FACTS))
     factory = AgentsFactory()
     agent = factory.kg_agent_by_step_key(
         step_key=StepKey.PROPOSED_FACTS,

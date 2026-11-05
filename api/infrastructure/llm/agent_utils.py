@@ -50,8 +50,8 @@ def tracing_config(trace_name: str, tags: List[str] = None) -> Dict[str, Any]:
         "metadata": {"langfuse_trace_name": trace_name, "langfuse_tags": tags if tags is not None else []}
     }
 
-def kgraph_intent_tracing() -> Dict[str, Any]:
-    return tracing_config("kgraph", ["kgraph", "user_intent"])
+def kgraph_tracing(step_tag:str) -> Dict[str, Any]:
+    return tracing_config("kgraph", ["kgraph", step_tag])
 
 def merge_dicts(current: Dict[str, Any] | None, update: Dict[str, Any] | None) -> Dict[str, Any]:
     """Reducer: merges the update into the current dict. A None value removes that key"""
